@@ -1,0 +1,16 @@
+{
+  "name": "@online-zoo/config",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "tsconfig.base.json",
+    "tailwind.preset.ts"
+  ],
+  "scripts": {
+    "build": "echo 'config ready'",
+    "typecheck": "echo 'config typecheck ok'",
+    "lint": "echo 'config lint ok'",
+    "test": "echo 'config test ok'"
+  }
+}
+

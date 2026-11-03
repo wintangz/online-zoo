@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & Framework outputs
+.next/
+.turbo/
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+
+# Playwright
+playwright-report/
+test-results/
+
+# Logs & Env
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.env
+.env.*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+

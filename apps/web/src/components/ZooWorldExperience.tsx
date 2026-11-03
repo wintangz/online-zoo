@@ -1,0 +1,41 @@
+'use client';
+
+import React, { useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { InputController } from '@online-zoo/game-core';
+import {
+  EntryLoadingScreen,
+  GameHudOverlay,
+  InfoPlaqueModal,
+  InteractionPromptBanner,
+  SettingsMenuModal,
+  TouchControlsOverlay
+} from '@online-zoo/ui';
+
+const DynamicZooGameCanvas = dynamic(
+  () => import('@online-zoo/game-client').then((mod) => mod.ZooGameCanvas),
+  { ssr: false }
+);
+
+export const ZooWorldExperience: React.FC = () => {
+  const inputController = useMemo(() => new InputController(), []);
+
+  return (
+    <main
+      className="relative h-screen w-screen select-none overflow-hidden"
+      onContextMenu={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+    >
+      {/* 3D React Three Fiber + Rapier Runtime */}
+      <DynamicZooGameCanvas inputController={inputController} />
+
+      {/* 2D React + Tailwind Overlays */}
+      <EntryLoadingScreen />
+      <GameHudOverlay />
+      <TouchControlsOverlay inputController={inputController} />
+      <InteractionPromptBanner inputController={inputController} />
+      <InfoPlaqueModal />
+      <SettingsMenuModal />
+    </main>
+  );
+};

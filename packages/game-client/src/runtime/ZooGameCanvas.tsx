@@ -1,0 +1,141 @@
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { PerformanceMonitor, useGLTF } from '@react-three/drei';
+import { Physics } from '@react-three/rapier';
+import { useStore } from 'zustand';
+import { clearAssetCache, getPreloadUrls } from '@online-zoo/game-assets';
+import {
+  attachDesktopInputBindings,
+  CameraControllerCore,
+  CharacterControllerCore,
+  gameStore,
+  InputController,
+  InteractionSystem,
+  PANDA_FOREST_LAYOUT,
+  resetMutableRuntimeState
+} from '@online-zoo/game-core';
+import { PandaForestScene } from '../environment/PandaForestScene';
+
+// Preload bundled GLB assets
+for (const url of getPreloadUrls()) {
+  useGLTF.preload(url);
+}
+
+export interface ZooGameRuntimeProps {
+  initialSpawn?: [number, number, number];
+  inputController?: InputController;
+  onReady?: () => void;
+  onDispose?: () => void;
+}
+
+export function createGameRuntimeControllers(
+  initialSpawn: [number, number, number] = PANDA_FOREST_LAYOUT.spawnPosition,
+  externalInputController?: InputController
+) {
+  const inputController = externalInputController ?? new InputController();
+  const characterController = new CharacterControllerCore(
+    initialSpawn,
+    Math.PI // Face North (-Z) down the Panda Forest trail at spawn, aligned with initial camera view
+  );
+  const cameraController = new CameraControllerCore(0, 0.45, 5.5);
+  const interactionSystem = new InteractionSystem();
+
+  return {
+    inputController,
+    characterController,
+    cameraController,
+    interactionSystem
+  };
+}
+
+export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
+  initialSpawn = PANDA_FOREST_LAYOUT.spawnPosition,
+  inputController: externalInputController,
+  onReady,
+  onDispose
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const qualityTier = useStore(gameStore, (s) => s.settings.qualityTier);
+  const [adaptiveDpr, setAdaptiveDpr] = useState<number>(1.25);
+
+  const controllers = useMemo(
+    () => createGameRuntimeControllers(initialSpawn, externalInputController),
+    [initialSpawn, externalInputController]
+  );
+
+  // Calculate effective DPR based on user qualityTier setting & PerformanceMonitor
+  const effectiveDpr = useMemo<[number, number]>(() => {
+    if (qualityTier === 'low') return [0.75, 1.0];
+    if (qualityTier === 'medium') return [1.0, 1.25];
+    if (qualityTier === 'high') return [1.25, 2.0];
+    return [0.85, adaptiveDpr];
+  }, [qualityTier, adaptiveDpr]);
+
+  useEffect(() => {
+    resetMutableRuntimeState(initialSpawn, Math.PI);
+    controllers.characterController.reset(initialSpawn, Math.PI);
+    controllers.cameraController.reset(0, 0.45, 5.5);
+
+    const detachDesktop = attachDesktopInputBindings(controllers.inputController, {
+      targetElement: containerRef.current
+    });
+
+    // Expose runtime handle immediately on mount so E2E and headless browsers can inspect state
+    if (typeof window !== 'undefined') {
+      const stepGameRuntimeTickPromise = import('./GameLoopController').then((mod) => {
+        (window as unknown as Record<string, unknown>).__ONLINE_ZOO_RUNTIME__ = {
+          ...controllers,
+          gameStore,
+          stepFrames: (frames = 1, dt = 1 / 60) => {
+            for (let i = 0; i < frames; i++) {
+              mod.stepGameRuntimeTick(dt, controllers);
+            }
+          }
+        };
+      });
+      void stepGameRuntimeTickPromise;
+    }
+
+    // Advance loading progress to 100% and mark ready
+    const st = gameStore.getState();
+    st.setLoadingProgress(100);
+    if (st.phase === 'loading') {
+      st.setPhase('ready');
+    }
+    onReady?.();
+
+    return () => {
+      detachDesktop();
+      controllers.inputController.dispose();
+      clearAssetCache();
+      resetMutableRuntimeState(initialSpawn, PANDA_FOREST_LAYOUT.spawnYaw);
+      onDispose?.();
+    };
+  }, [controllers, initialSpawn, onReady, onDispose]);
+
+  return (
+    <div
+      ref={containerRef}
+      data-testid="zoo-game-canvas-container"
+      className="relative h-full w-full cursor-grab select-none overflow-hidden bg-sky-100 active:cursor-grabbing"
+    >
+      <Canvas
+        shadows={qualityTier !== 'low'}
+        dpr={effectiveDpr}
+        camera={{ fov: 55, near: 0.1, far: 150, position: [0, 3.6, 23] }}
+        gl={{ antialias: qualityTier !== 'low', powerPreference: 'high-performance' }}
+      >
+        <PerformanceMonitor
+          onIncline={() => setAdaptiveDpr(1.75)}
+          onDecline={() => setAdaptiveDpr(1.0)}
+        />
+        <Suspense fallback={null}>
+          <Physics gravity={[0, -18, 0]}>
+            <PandaForestScene {...controllers} />
+          </Physics>
+        </Suspense>
+      </Canvas>
+    </div>
+  );
+};
+
