@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const e2ePort = Number(process.env.PLAYWRIGHT_PORT || 3100);
+const baseURL = `http://localhost:${e2ePort}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry'
   },
   projects: [
@@ -18,9 +21,12 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: 'node server.mjs',
+    url: baseURL,
+    env: {
+      PORT: String(e2ePort)
+    },
+    reuseExistingServer: false,
     timeout: 60000
   }
 });

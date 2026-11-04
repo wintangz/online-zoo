@@ -1,8 +1,5 @@
 {
   "extends": "@online-zoo/config/tsconfig.base.json",
-  "compilerOptions": {
-    "baseUrl": "."
-  },
-  "include": ["src/**/*", "__tests__/**/*"]
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*.mjs", "*.config.ts"]
 }
 

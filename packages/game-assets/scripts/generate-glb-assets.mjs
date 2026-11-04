@@ -9,17 +9,27 @@ const OUTPUT_DIR = path.resolve(__dirname, '../../../apps/web/public/assets/mode
  * Creates a spec-compliant glTF 2.0 binary (.glb) buffer with stylized box/prism primitives
  * and PBR metallic-roughness materials so GLTFLoader / useGLTF can load real .glb assets
  * without requiring browser FileReader APIs at build time.
+ * @param {{ name: string; parts: Array<{ size: number[]; offset: number[]; color: number[]; metallic?: number; roughness?: number }> }} definition
  */
 function buildStylizedGlb({ name, parts }) {
+  /** @type {number[]} */
   const positions = [];
+  /** @type {number[]} */
   const normals = [];
+  /** @type {number[]} */
   const indices = [];
+  /** @type {any[]} */
   const materials = [];
+  /** @type {Array<{ startIndex: number; indexCount: number; materialIndex: number }>} */
   const meshPrimitives = [];
 
   parts.forEach((part, partIdx) => {
-    const [sx, sy, sz] = part.size;
-    const [ox, oy, oz] = part.offset;
+    const sx = part.size[0] ?? 1;
+    const sy = part.size[1] ?? 1;
+    const sz = part.size[2] ?? 1;
+    const ox = part.offset[0] ?? 0;
+    const oy = part.offset[1] ?? 0;
+    const oz = part.offset[2] ?? 0;
     const hx = sx / 2;
     const hy = sy / 2;
     const hz = sz / 2;
@@ -93,9 +103,12 @@ function buildStylizedGlb({ name, parts }) {
     const startIndex = indices.length;
     faces.forEach((face, fIdx) => {
       const v0 = baseVertex + fIdx * 4;
-      for (const [vx, vy, vz] of face.v) {
+      for (const vertex of face.v) {
+        const vx = vertex[0] ?? 0;
+        const vy = vertex[1] ?? 0;
+        const vz = vertex[2] ?? 0;
         positions.push(vx + ox, vy + oy, vz + oz);
-        normals.push(face.n[0], face.n[1], face.n[2]);
+        normals.push(face.n[0] ?? 0, face.n[1] ?? 0, face.n[2] ?? 0);
       }
       indices.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
     });
@@ -121,15 +134,18 @@ function buildStylizedGlb({ name, parts }) {
   const idxArray = new Uint16Array(indices);
 
   // Compute min/max for POSITION accessor (required by glTF 2.0 spec)
-  const minPos = [Infinity, Infinity, Infinity];
-  const maxPos = [-Infinity, -Infinity, -Infinity];
+  const minPos = /** @type {[number, number, number]} */ ([Infinity, Infinity, Infinity]);
+  const maxPos = /** @type {[number, number, number]} */ ([-Infinity, -Infinity, -Infinity]);
   for (let i = 0; i < positions.length; i += 3) {
-    minPos[0] = Math.min(minPos[0], positions[i]);
-    minPos[1] = Math.min(minPos[1], positions[i + 1]);
-    minPos[2] = Math.min(minPos[2], positions[i + 2]);
-    maxPos[0] = Math.max(maxPos[0], positions[i]);
-    maxPos[1] = Math.max(maxPos[1], positions[i + 1]);
-    maxPos[2] = Math.max(maxPos[2], positions[i + 2]);
+    const px = positions[i] ?? 0;
+    const py = positions[i + 1] ?? 0;
+    const pz = positions[i + 2] ?? 0;
+    minPos[0] = Math.min(minPos[0], px);
+    minPos[1] = Math.min(minPos[1], py);
+    minPos[2] = Math.min(minPos[2], pz);
+    maxPos[0] = Math.max(maxPos[0], px);
+    maxPos[1] = Math.max(maxPos[1], py);
+    maxPos[2] = Math.max(maxPos[2], pz);
   }
 
   const posByteLength = posArray.byteLength;

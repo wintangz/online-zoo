@@ -68,25 +68,67 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
     expect(selectedText).toBe('');
 
-    // Keyboard camera orbit (Q/R) and mouse wheel zoom
+    // Verify Q/R keys do NOT orbit camera (orbit is by dragging only per FR-022)
     await page.keyboard.down('KeyQ');
     await page.evaluate(() => {
       const rt = (window as unknown as { __ONLINE_ZOO_RUNTIME__: { stepFrames: (n: number) => void } }).__ONLINE_ZOO_RUNTIME__;
       rt.stepFrames(5);
     });
     await page.keyboard.up('KeyQ');
-    const yawAfterKeyOrbit = await page.evaluate(() => {
+    const yawAfterKeyQ = await page.evaluate(() => {
       const rt = (window as unknown as { __ONLINE_ZOO_RUNTIME__: { cameraController: { getState: () => { yaw: number } } } }).__ONLINE_ZOO_RUNTIME__;
       return rt.cameraController.getState().yaw;
     });
-    expect(yawAfterKeyOrbit).not.toBe(yawAfterDrag);
+    expect(yawAfterKeyQ).toBe(yawAfterDrag);
 
-    // 5. Mobile Touch Controls & Dedicated Run Button (US2, FR-013)
+    // Verify dragging downward tilts camera pitch negative to look up at the sky (FR-024)
+    await page.mouse.move(500, 500);
+    await page.mouse.down({ button: 'left' });
+    await page.mouse.move(500, 120, { steps: 6 });
+    await page.mouse.up({ button: 'left' });
+    await page.evaluate(() => {
+      const rt = (window as unknown as { __ONLINE_ZOO_RUNTIME__: { stepFrames: (n: number) => void } }).__ONLINE_ZOO_RUNTIME__;
+      rt.stepFrames(2);
+    });
+    const pitchLookingUp = await page.evaluate(() => {
+      const rt = (window as unknown as { __ONLINE_ZOO_RUNTIME__: { cameraController: { getState: () => { pitch: number } } } }).__ONLINE_ZOO_RUNTIME__;
+      return rt.cameraController.getState().pitch;
+    });
+    expect(pitchLookingUp).toBeLessThan(0.15);
+
+    // 5. Mobile Touch Controls & Dedicated Run Button (US2, FR-013, FR-021):
+    // Verify touch joysticks and buttons are strictly hidden on non-touch desktop by default
+    await expect(page.getByTestId('virtual-joystick-pad')).toBeHidden();
+    await expect(page.getByTestId('touch-run-btn')).toBeHidden();
+    await expect(page.getByTestId('touch-jump-btn')).toBeHidden();
+
+    // Activate touch input mode (simulating a touchscreen/mobile device) and verify controls appear and function
+    await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: {
+          gameStore: { getState: () => { setActiveDevice: (d: 'touch' | 'desktop') => void } };
+        };
+      }).__ONLINE_ZOO_RUNTIME__;
+      rt.gameStore.getState().setActiveDevice('touch');
+    });
     const runBtn = page.getByTestId('touch-run-btn');
+    await expect(page.getByTestId('virtual-joystick-pad')).toBeVisible();
+    await expect(runBtn).toBeVisible();
     await runBtn.click();
     await expect(runBtn).toHaveAttribute('aria-pressed', 'true');
     await runBtn.click();
     await expect(runBtn).toHaveAttribute('aria-pressed', 'false');
+
+    // Return to desktop mode and verify touch controls hide again
+    await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: {
+          gameStore: { getState: () => { setActiveDevice: (d: 'touch' | 'desktop') => void } };
+        };
+      }).__ONLINE_ZOO_RUNTIME__;
+      rt.gameStore.getState().setActiveDevice('desktop');
+    });
+    await expect(page.getByTestId('virtual-joystick-pad')).toBeHidden();
 
     // 6. Contextual Environment Interaction: Habitat Info Plaque & Stone Lantern (US3, FR-015..FR-018)
     await page.evaluate(() => {
@@ -145,8 +187,16 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     await page.getByTestId('resume-game-btn').click();
     await expect(settingsModal).toBeHidden();
 
-    // Resize viewport to mobile dimensions and verify HUD & canvas remain interactive
+    // Resize viewport to mobile dimensions + activate touch mode and verify HUD & joystick remain interactive
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: {
+          gameStore: { getState: () => { setActiveDevice: (d: 'touch' | 'desktop') => void } };
+        };
+      }).__ONLINE_ZOO_RUNTIME__;
+      rt.gameStore.getState().setActiveDevice('touch');
+    });
     await expect(page.getByTestId('virtual-joystick-pad')).toBeVisible();
   });
 });

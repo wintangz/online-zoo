@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { RigidBody, CuboidCollider } from '@react-three/rapier';
+import { RigidBody, CuboidCollider, CylinderCollider } from '@react-three/rapier';
 import { PANDA_FOREST_LAYOUT } from '@online-zoo/game-core';
 
 export const PerimeterEnclosure: React.FC = () => {
@@ -61,8 +61,12 @@ export const PerimeterEnclosure: React.FC = () => {
         </group>
       ))}
 
-      {/* Decorative Panda Sanctuary Entrance Arch near South Spawn */}
+      {/* Decorative Panda Sanctuary Entrance Arch near South Spawn with Solid Pillar Colliders */}
       <group position={[0, 0, 22.5]}>
+        <RigidBody type="fixed" colliders={false} name="entrance-arch-colliders">
+          <CylinderCollider args={[2.2, 0.45]} position={[-2.6, 2.2, 0]} />
+          <CylinderCollider args={[2.2, 0.45]} position={[2.6, 2.2, 0]} />
+        </RigidBody>
         <mesh castShadow position={[-2.6, 2.2, 0]}>
           <cylinderGeometry args={[0.25, 0.3, 4.4, 16]} />
           <meshStandardMaterial color="#8f322a" roughness={0.7} />

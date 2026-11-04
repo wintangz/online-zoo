@@ -4,6 +4,7 @@ import { clearAssetCache } from '@online-zoo/game-assets';
 import {
   attachDesktopInputBindings,
   gameStore,
+  InMemoryMultiplayerHub,
   mutableRuntimeState,
   PANDA_FOREST_LAYOUT,
   resetMutableRuntimeState
@@ -14,8 +15,9 @@ import {
 } from '../src/runtime/GameLoopController';
 import { createGameRuntimeControllers } from '../src/runtime/ZooGameCanvas';
 
-describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044)', () => {
-  it('handles repeated initialization, frame stepping, and cleanup without leaking listeners or state', () => {
+describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044, T027)', () => {
+  it('handles repeated initialization, multiplayer session connection, frame stepping, and cleanup without leaking listeners or state', async () => {
+    const hub = new InMemoryMultiplayerHub();
     for (let cycle = 0; cycle < 3; cycle++) {
       gameStore.getState().resetSession();
       gameStore.getState().setPhase('playing');
@@ -24,7 +26,15 @@ describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044)', () =
       const container = document.createElement('div');
       document.body.appendChild(container);
 
-      const controllers = createGameRuntimeControllers();
+      const controllers = createGameRuntimeControllers(
+        PANDA_FOREST_LAYOUT.spawnPosition,
+        undefined,
+        { transportFactory: hub.createTransportFactory() }
+      );
+      controllers.multiplayerClient.connect();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(gameStore.getState().multiplayer.status).toBe('connected');
+
       const detach = attachDesktopInputBindings(controllers.inputController, {
         targetElement: container
       });
@@ -41,10 +51,14 @@ describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044)', () =
 
       // Cleanup cycle
       detach();
+      controllers.multiplayerClient.disconnect(true);
       controllers.inputController.dispose();
       clearAssetCache();
       resetMutableRuntimeState();
       container.remove();
+
+      expect(gameStore.getState().multiplayer.status).toBe('disconnected');
+      expect(mutableRuntimeState.remotePlayers.size).toBe(0);
 
       // Verify state is cleanly reset to spawn and further key events do not mutate disposed controller
       expect(mutableRuntimeState.avatar.position).toEqual(PANDA_FOREST_LAYOUT.spawnPosition);
@@ -120,7 +134,7 @@ describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044)', () =
     expect(gameStore.getState().isCursorRevealed).toBe(false);
 
     // 3. Opening and closing a plaque modal must cleanly restore isCursorRevealed to false
-    gameStore.getState().openPlaqueModal(PANDA_FOREST_LAYOUT.interactiveObjects[0]);
+    gameStore.getState().openPlaqueModal(PANDA_FOREST_LAYOUT.interactiveObjects[0]!);
     expect(gameStore.getState().isCursorRevealed).toBe(true);
     gameStore.getState().closePlaqueModal();
     expect(gameStore.getState().isCursorRevealed).toBe(false);
@@ -153,7 +167,7 @@ describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044)', () =
   });
 
   it('detects obstacle and perimeter wall hits in computeCameraObstacleHitDistance', () => {
-    const obs = PANDA_FOREST_LAYOUT.obstacles[0];
+    const obs = PANDA_FOREST_LAYOUT.obstacles[0]!;
     // Place pivot 3m south of obstacle, looking straight north (yaw = PI) so camera ray points south (+Z) or vice versa
     const pivotNearObstacle: [number, number, number] = [
       obs.position[0],

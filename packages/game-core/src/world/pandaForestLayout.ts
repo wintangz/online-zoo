@@ -1,4 +1,8 @@
-import type { InteractiveObjectDescriptor, SolidObstacleCollider } from '../types';
+import type {
+  InteractiveObjectDescriptor,
+  SolidObstacleCollider,
+  WorldSeatOccupancyState
+} from '../types';
 
 export interface PandaForestLayoutConfig {
   /** Spawn Transform: Position [0, 0.1, 18], initial facing yaw 0 */
@@ -83,8 +87,89 @@ export const PANDA_FOREST_INTERACTIVE_OBJECTS: InteractiveObjectDescriptor[] = [
     promptAction: 'Rest at Overlook Bench',
     archetype: 'world_prop',
     position: [-2.5, 0, -13.0],
-    interactionRadius: 2.8,
-    propReactionType: 'rest_bench'
+    interactionRadius: 3.2,
+    propReactionType: 'rest_bench',
+    seats: [
+      {
+        seatIndex: 0,
+        label: 'Left Seat',
+        worldPosition: [-3.05, 0.1, -12.05],
+        facingYaw: 0.25
+      },
+      {
+        seatIndex: 1,
+        label: 'Right Seat',
+        worldPosition: [-1.95, 0.1, -12.05],
+        facingYaw: 0.25
+      }
+    ]
+  },
+  {
+    id: 'prop-plaza-bench',
+    title: 'Entry Plaza Bamboo Bench',
+    promptAction: 'Sit on Plaza Bench',
+    archetype: 'world_prop',
+    position: [-3.2, 0, 15.0],
+    interactionRadius: 3.4,
+    propReactionType: 'rest_bench',
+    seats: [
+      {
+        seatIndex: 0,
+        label: 'Left Seat',
+        worldPosition: [-3.75, 0.1, 15.95],
+        facingYaw: 0.15
+      },
+      {
+        seatIndex: 1,
+        label: 'Right Seat',
+        worldPosition: [-2.65, 0.1, 15.95],
+        facingYaw: 0.15
+      }
+    ]
+  },
+  {
+    id: 'prop-pond-chair',
+    title: 'Lotus Pond Viewing Chair',
+    promptAction: 'Sit on Viewing Chair',
+    archetype: 'world_prop',
+    position: [-0.8, 0, 1.5],
+    interactionRadius: 3.0,
+    propReactionType: 'rest_bench',
+    seats: [
+      {
+        seatIndex: 0,
+        label: 'Center Seat',
+        worldPosition: [-0.8, 0.1, 2.48],
+        facingYaw: -0.45
+      }
+    ]
+  },
+  {
+    id: 'station-panda-habitat',
+    title: 'Giant Panda Bamboo Sanctuary Station',
+    promptAction: 'Observe & Feed Giant Pandas',
+    archetype: 'world_prop',
+    position: [8.4, 0, 9.2],
+    interactionRadius: 3.6,
+    propReactionType: 'toggle_lantern'
+  },
+  {
+    id: 'station-penguin-cove',
+    title: 'Glacier Cove Penguin Feeding Station',
+    promptAction: 'Observe & Feed Penguins',
+    archetype: 'world_prop',
+    position: [-8.6, 0, 7.0],
+    interactionRadius: 3.6,
+    propReactionType: 'toggle_lantern'
+  },
+  {
+    id: 'station-otter-stream',
+    title: 'Highland Stream Otter Lookout',
+    promptAction: 'Observe & Feed River Otters',
+    archetype: 'world_prop',
+    position: [-2.8, 0, -3.2],
+    interactionRadius: 3.6,
+    propReactionType: 'toggle_lantern'
   }
 ];
 
@@ -115,8 +200,43 @@ export const PANDA_FOREST_OBSTACLES: SolidObstacleCollider[] = [
   { id: 'bamboo-05', kind: 'bamboo', position: [-14.0, 0, 9.5], radius: 1.3, height: 7.8, scale: 1.1 },
   { id: 'bamboo-06', kind: 'bamboo', position: [-12.0, 0, -12.0], radius: 1.2, height: 7.5, scale: 1.05 },
   { id: 'bamboo-07', kind: 'bamboo', position: [2.5, 0, -19.5], radius: 1.3, height: 8.2, scale: 1.2 },
-  { id: 'bamboo-08', kind: 'bamboo', position: [-4.5, 0, -19.5], radius: 1.3, height: 8.0, scale: 1.15 }
+  { id: 'bamboo-08', kind: 'bamboo', position: [-4.5, 0, -19.5], radius: 1.3, height: 8.0, scale: 1.15 },
+
+  // Entrance Sanctuary Arch Pillars (South Gate at Z = 22.5)
+  { id: 'gate-pillar-west', kind: 'pillar', position: [-2.6, 0, 22.5], radius: 0.45, height: 4.4 },
+  { id: 'gate-pillar-east', kind: 'pillar', position: [2.6, 0, 22.5], radius: 0.45, height: 4.4 },
+
+  // Solid World Props, Habitat Plaques, Ecology Signs, Lantern, Chime Pavilion & Benches (FR-023, FR-012)
+  { id: 'collider-plaque-panda-habitat', kind: 'pillar', position: [2.8, 0, 11.5], radius: 0.55, height: 2.0 },
+  { id: 'collider-plaque-pond-ecology', kind: 'pillar', position: [-1.2, 0, -3.5], radius: 0.55, height: 2.0 },
+  { id: 'collider-prop-stone-lantern', kind: 'pillar', position: [4.2, 0, 1.5], radius: 0.55, height: 2.2 },
+  { id: 'collider-prop-wind-chime', kind: 'pillar', position: [7.5, 0, -6.0], radius: 0.75, height: 2.8 },
+  { id: 'collider-prop-scenic-bench', kind: 'pillar', position: [-2.5, 0, -13.0], radius: 0.5, height: 1.4 },
+  { id: 'collider-prop-plaza-bench', kind: 'pillar', position: [-3.2, 0, 15.0], radius: 0.5, height: 1.4 },
+  { id: 'collider-prop-pond-chair', kind: 'pillar', position: [-0.8, 0, 1.5], radius: 0.45, height: 1.3 }
 ];
+
+export function createInitialRoomSeatStates(
+  interactiveObjects: InteractiveObjectDescriptor[] = PANDA_FOREST_INTERACTIVE_OBJECTS
+): Record<string, WorldSeatOccupancyState[]> {
+  const seatStates: Record<string, WorldSeatOccupancyState[]> = {};
+  for (const obj of interactiveObjects) {
+    if (obj.seats && obj.seats.length > 0) {
+      seatStates[obj.id] = obj.seats.map((slot) => ({
+        objectId: obj.id,
+        seatIndex: slot.seatIndex,
+        label: slot.label,
+        worldPosition: [...slot.worldPosition],
+        facingYaw: slot.facingYaw,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      }));
+    }
+  }
+  return seatStates;
+}
 
 export const PANDA_FOREST_LAYOUT: PandaForestLayoutConfig = {
   spawnPosition: [0, 0.1, 18],

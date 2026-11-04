@@ -14,7 +14,7 @@ describe('InteractionSystem (US3 Proximity, Overlapping Disambiguation & Mixed A
 
   it('detects objects within interactionRadius and returns null when out of range (FR-016, SC-006)', () => {
     const sys = new InteractionSystem();
-    const plaque = PANDA_FOREST_INTERACTIVE_OBJECTS[0];
+    const plaque = PANDA_FOREST_INTERACTIVE_OBJECTS[0]!;
 
     const nearEval = sys.evaluate(
       [plaque.position[0], 0, plaque.position[2] + 1.2],

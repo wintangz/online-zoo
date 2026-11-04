@@ -11,6 +11,9 @@ import {
   gameStore,
   InputController,
   InteractionSystem,
+  MultiplayerClient,
+  type MultiplayerClientOptions,
+  mutableRuntimeState,
   PANDA_FOREST_LAYOUT,
   resetMutableRuntimeState
 } from '@online-zoo/game-core';
@@ -24,13 +27,16 @@ for (const url of getPreloadUrls()) {
 export interface ZooGameRuntimeProps {
   initialSpawn?: [number, number, number];
   inputController?: InputController;
+  multiplayerOptions?: MultiplayerClientOptions;
+  enableMultiplayer?: boolean;
   onReady?: () => void;
   onDispose?: () => void;
 }
 
 export function createGameRuntimeControllers(
   initialSpawn: [number, number, number] = PANDA_FOREST_LAYOUT.spawnPosition,
-  externalInputController?: InputController
+  externalInputController?: InputController,
+  multiplayerOptions?: MultiplayerClientOptions
 ) {
   const inputController = externalInputController ?? new InputController();
   const characterController = new CharacterControllerCore(
@@ -39,18 +45,33 @@ export function createGameRuntimeControllers(
   );
   const cameraController = new CameraControllerCore(0, 0.45, 5.5);
   const interactionSystem = new InteractionSystem();
+  const multiplayerClient = new MultiplayerClient({
+    ...multiplayerOptions,
+    onAuthoritativePositionApplied: (pos, yaw) => {
+      characterController.commitPhysicsResult(pos, true);
+      if (typeof yaw === 'number') {
+        const st = characterController.getState();
+        st.facingYaw = yaw;
+        st.targetYaw = yaw;
+      }
+      multiplayerOptions?.onAuthoritativePositionApplied?.(pos, yaw);
+    }
+  });
 
   return {
     inputController,
     characterController,
     cameraController,
-    interactionSystem
+    interactionSystem,
+    multiplayerClient
   };
 }
 
 export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
   initialSpawn = PANDA_FOREST_LAYOUT.spawnPosition,
   inputController: externalInputController,
+  multiplayerOptions,
+  enableMultiplayer = true,
   onReady,
   onDispose
 }) => {
@@ -59,8 +80,8 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
   const [adaptiveDpr, setAdaptiveDpr] = useState<number>(1.25);
 
   const controllers = useMemo(
-    () => createGameRuntimeControllers(initialSpawn, externalInputController),
-    [initialSpawn, externalInputController]
+    () => createGameRuntimeControllers(initialSpawn, externalInputController, multiplayerOptions),
+    [initialSpawn, externalInputController, multiplayerOptions]
   );
 
   // Calculate effective DPR based on user qualityTier setting & PerformanceMonitor
@@ -76,16 +97,30 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
     controllers.characterController.reset(initialSpawn, Math.PI);
     controllers.cameraController.reset(0, 0.45, 5.5);
 
+    // Initialize persistent player identity & avatar before connecting (FR-001, FR-011)
+    gameStore.getState().initializePlayerIdentity();
+
     const detachDesktop = attachDesktopInputBindings(controllers.inputController, {
       targetElement: containerRef.current
     });
 
-    // Expose runtime handle immediately on mount so E2E and headless browsers can inspect state
+    if (enableMultiplayer) {
+      controllers.multiplayerClient.connect();
+    }
+
+    // Expose runtime handle immediately on mount so HUD and E2E browsers can inspect & control state
     if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).__ONLINE_ZOO_RECONNECT__ = () => {
+        controllers.multiplayerClient.connect();
+      };
+      (window as unknown as Record<string, unknown>).__ONLINE_ZOO_SYNC_IDENTITY__ = () => {
+        controllers.multiplayerClient.sendIdentityUpdate(gameStore.getState().identity.profile);
+      };
       const stepGameRuntimeTickPromise = import('./GameLoopController').then((mod) => {
         (window as unknown as Record<string, unknown>).__ONLINE_ZOO_RUNTIME__ = {
           ...controllers,
           gameStore,
+          mutableRuntimeState,
           stepFrames: (frames = 1, dt = 1 / 60) => {
             for (let i = 0; i < frames; i++) {
               mod.stepGameRuntimeTick(dt, controllers);
@@ -106,12 +141,17 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
 
     return () => {
       detachDesktop();
+      controllers.multiplayerClient.disconnect(true);
       controllers.inputController.dispose();
       clearAssetCache();
       resetMutableRuntimeState(initialSpawn, PANDA_FOREST_LAYOUT.spawnYaw);
+      if (typeof window !== 'undefined') {
+        delete (window as unknown as Record<string, unknown>).__ONLINE_ZOO_RECONNECT__;
+        delete (window as unknown as Record<string, unknown>).__ONLINE_ZOO_SYNC_IDENTITY__;
+      }
       onDispose?.();
     };
-  }, [controllers, initialSpawn, onReady, onDispose]);
+  }, [controllers, enableMultiplayer, initialSpawn, onReady, onDispose]);
 
   return (
     <div
@@ -122,7 +162,7 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
       <Canvas
         shadows={qualityTier !== 'low'}
         dpr={effectiveDpr}
-        camera={{ fov: 55, near: 0.1, far: 150, position: [0, 3.6, 23] }}
+        camera={{ fov: 55, near: 0.1, far: 300, position: [0, 3.6, 23] }}
         gl={{ antialias: qualityTier !== 'low', powerPreference: 'high-performance' }}
       >
         <PerformanceMonitor

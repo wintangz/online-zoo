@@ -6,6 +6,18 @@ export interface TouchControlsOverlayProps {
   inputController: InputController;
 }
 
+export function isMobileOrTouchPrimaryPlatform(): boolean {
+  if (typeof window === 'undefined') return false;
+  const coarsePrimary =
+    typeof window.matchMedia === 'function' &&
+    (window.matchMedia('(pointer: coarse)').matches ||
+      window.matchMedia('(hover: none) and (any-pointer: coarse)').matches);
+  const mobileUserAgent =
+    typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod|Mobile|Touch/i.test(navigator.userAgent);
+  return Boolean(coarsePrimary || mobileUserAgent);
+}
+
 export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inputController }) => {
   const phase = useStore(gameStore, (s) => s.phase);
   const activeDevice = useStore(gameStore, (s) => s.activeDevice);
@@ -15,8 +27,21 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inpu
   const joystickContainerRef = useRef<HTMLDivElement>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isRunToggled, setIsRunToggled] = useState(false);
+  const [isTouchPlatform, setIsTouchPlatform] = useState(false);
 
-  // Listen for touch gestures on the right half of the screen without blocking desktop mouse clicks
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updatePlatformDetection = () => {
+      setIsTouchPlatform(isMobileOrTouchPrimaryPlatform());
+    };
+    updatePlatformDetection();
+    window.addEventListener('resize', updatePlatformDetection);
+    return () => {
+      window.removeEventListener('resize', updatePlatformDetection);
+    };
+  }, []);
+
+  // Listen for touch gestures on the window; if any touch event occurs on a touchscreen-capable device, activate touch mode
   useEffect(() => {
     if (phase !== 'playing' || typeof window === 'undefined') return;
 
@@ -30,6 +55,8 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inpu
     };
 
     const onWindowTouchStart = (e: TouchEvent) => {
+      inputController.addLookDelta(0, 0, 'touch');
+      gameStore.getState().setActiveDevice('touch');
       if (isInsideInteractiveControl(e.target)) return;
       const t = e.touches[0];
       if (!t) return;
@@ -48,7 +75,11 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inpu
           adapter.moveCameraTouch(t.clientX, t.clientY);
         }
       } else if (e.touches.length >= 2) {
-        adapter.updatePinchZoom(e.touches[0], e.touches[1]);
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        if (t0 && t1) {
+          adapter.updatePinchZoom(t0, t1);
+        }
       }
     };
 
@@ -67,9 +98,11 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inpu
       window.removeEventListener('touchend', onWindowTouchEnd);
       window.removeEventListener('touchcancel', onWindowTouchEnd);
     };
-  }, [phase, adapter]);
+  }, [phase, adapter, inputController]);
 
-  if (phase !== 'playing') {
+  const showTouchControls = activeDevice === 'touch' || isTouchPlatform;
+
+  if (phase !== 'playing' || !showTouchControls) {
     return null;
   }
 
@@ -115,15 +148,23 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({ inpu
           activeDevice === 'touch' ? 'pointer-events-auto' : 'pointer-events-none'
         }`}
         onTouchStart={(e) => {
-          if (e.touches.length === 1) {
-            adapter.startCameraTouch(e.touches[0].clientX, e.touches[0].clientY);
+          const t0 = e.touches[0];
+          if (e.touches.length === 1 && t0) {
+            adapter.startCameraTouch(t0.clientX, t0.clientY);
           }
         }}
         onTouchMove={(e) => {
           if (e.touches.length === 1) {
-            adapter.moveCameraTouch(e.touches[0].clientX, e.touches[0].clientY);
+            const t0 = e.touches[0];
+            if (t0) {
+              adapter.moveCameraTouch(t0.clientX, t0.clientY);
+            }
           } else if (e.touches.length >= 2) {
-            adapter.updatePinchZoom(e.touches[0], e.touches[1]);
+            const t0 = e.touches[0];
+            const t1 = e.touches[1];
+            if (t0 && t1) {
+              adapter.updatePinchZoom(t0, t1);
+            }
           }
         }}
         onTouchEnd={() => adapter.endCameraTouch()}

@@ -50,7 +50,11 @@ export function attachDesktopInputBindings(
 
   const isPlaying = () => {
     const state = gameStore.getState();
-    return state.phase === 'playing' && state.activePlaqueModal === null;
+    return (
+      state.phase === 'playing' &&
+      state.activePlaqueModal === null &&
+      !state.identity.draft.isOpen
+    );
   };
 
   const isTargetPointerLocked = () => {
@@ -75,7 +79,10 @@ export function attachDesktopInputBindings(
       blurFocusedUiElement();
       controller.setKeyState('Escape', true);
       const st = gameStore.getState();
-      if (st.activePlaqueModal) {
+      if (st.identity.draft.isOpen) {
+        st.cancelAvatarCustomizer();
+        controller.resetAll();
+      } else if (st.activePlaqueModal) {
         st.closePlaqueModal();
         controller.resetAll();
       } else if (st.phase === 'playing') {
@@ -118,9 +125,7 @@ export function attachDesktopInputBindings(
         'KeyS',
         'KeyD',
         'KeyE',
-        'KeyF',
-        'KeyQ',
-        'KeyR'
+        'KeyF'
       ].includes(e.code)
     ) {
       // Prevent Space/Enter from activating a previously clicked HUD button or scrolling

@@ -43,6 +43,14 @@ describe('Desktop Input & Collision Boundary Enforcement (FR-002, FR-003, FR-012
     expect(snap3.runHeld).toBe(false);
     expect(snap3.cursorRevealHeld).toBe(false);
 
+    // Q and R keys must NOT orbit the camera (drag-only camera orbit per FR-022)
+    input.setKeyState('KeyQ', true);
+    input.setKeyState('KeyR', true);
+    const snapQR = input.consumeFrameSnapshot();
+    expect(snapQR.lookDeltaX).toBe(0);
+    input.setKeyState('KeyQ', false);
+    input.setKeyState('KeyR', false);
+
     // KeyF and triggerAction('interact' | 'jump' | 'menu') also queue edge-triggered actions cleanly
     input.setKeyState('KeyF', true);
     expect(input.consumeFrameSnapshot().interactPressed).toBe(true);
@@ -57,8 +65,20 @@ describe('Desktop Input & Collision Boundary Enforcement (FR-002, FR-003, FR-012
     expect(snap4.menuPressed).toBe(true);
   });
 
-  it('blocks the avatar from walking through rocks, trees, bamboo clusters, pond shoreline, and outer perimeter 100% of the time (SC-005)', () => {
-    // 1. Test every solid obstacle in Panda Forest
+  it('blocks the avatar from walking through rocks, trees, bamboo clusters, gate pillars, signs, benches, pond shoreline, and outer perimeter 100% of the time (SC-005, FR-023)', () => {
+    // 1. Test every solid obstacle in Panda Forest (including gate pillars, signs, lantern, chime, bench)
+    const obstacleIds = PANDA_FOREST_LAYOUT.obstacles.map((o) => o.id);
+    expect(obstacleIds).toEqual(
+      expect.arrayContaining([
+        'gate-pillar-west',
+        'gate-pillar-east',
+        'collider-plaque-panda-habitat',
+        'collider-plaque-pond-ecology',
+        'collider-prop-stone-lantern',
+        'collider-prop-wind-chime',
+        'collider-prop-scenic-bench'
+      ])
+    );
     for (const obs of PANDA_FOREST_LAYOUT.obstacles) {
       const res = resolveHorizontalWorldCollisions([obs.position[0], 0.1, obs.position[2]], 0.45);
       expect(res.collided).toBe(true);

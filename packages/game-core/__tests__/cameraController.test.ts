@@ -33,7 +33,7 @@ describe('CameraControllerCore (US1 360 Orbit, Pitch, Zoom & Obstacle Pull-In)',
     expect(step2.yaw).toBeLessThan(Math.PI * 2);
   });
 
-  it('clamps vertical pitch to [0.15 rad, 1.35 rad] and targetDistance to [2.5 m, 10.0 m]', () => {
+  it('clamps vertical pitch to [-0.65 rad, 1.35 rad] (supporting upward sky look) and targetDistance to [2.5 m, 10.0 m]', () => {
     const cam = new CameraControllerCore(0, 0.5, 5.5);
 
     const highPitch = cam.step({
@@ -59,8 +59,11 @@ describe('CameraControllerCore (US1 360 Orbit, Pitch, Zoom & Obstacle Pull-In)',
       obstacleHitDistance: null,
       deltaTime: 1 / 60
     });
-    expect(lowPitch.pitch).toBeCloseTo(0.15, 4);
+    expect(lowPitch.pitch).toBeCloseTo(-0.65, 4);
     expect(lowPitch.targetDistance).toBeCloseTo(2.5, 4);
+    // When looking up (pitch < 0), lookAtTarget.y is elevated above cameraPosition.y and camera stays above ground
+    expect(lowPitch.cameraPosition[1]).toBeGreaterThanOrEqual(0.35);
+    expect(lowPitch.lookAtTarget[1]).toBeGreaterThan(lowPitch.cameraPosition[1]);
   });
 
   it('pulls effectiveDistance forward in front of solid obstacles and recovers when unobstructed (FR-011, SC-004)', () => {

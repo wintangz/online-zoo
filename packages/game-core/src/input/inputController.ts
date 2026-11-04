@@ -14,6 +14,14 @@ export class InputController {
   private activeDevice: InputDeviceMode = 'desktop';
   private cleanups: Array<() => void> = [];
 
+  public setActiveDevice(device: InputDeviceMode): void {
+    this.activeDevice = device;
+  }
+
+  public getActiveDevice(): InputDeviceMode {
+    return this.activeDevice;
+  }
+
   public setKeyState(code: string, pressed: boolean): void {
     this.activeDevice = 'desktop';
     if (pressed) {
@@ -127,11 +135,6 @@ export class InputController {
     const runHeld = desktopShift || this.touchRunActive;
     const cursorRevealHeld = this.keys.has('AltLeft') || this.keys.has('AltRight');
 
-    // Keyboard camera orbit support (Q = orbit left, R = orbit right) for laptop/trackpad ergonomics
-    let keyLookX = 0;
-    if (this.keys.has('KeyQ')) keyLookX -= 0.035;
-    if (this.keys.has('KeyR')) keyLookX += 0.035;
-
     const snapshot: NormalizedInputSnapshot = {
       moveX,
       moveZ,
@@ -140,7 +143,7 @@ export class InputController {
       interactPressed: this.interactPressedFlag(),
       menuPressed: this.menuPressedFlag(),
       cursorRevealHeld,
-      lookDeltaX: this.lookDeltaX + keyLookX,
+      lookDeltaX: this.lookDeltaX,
       lookDeltaY: this.lookDeltaY,
       zoomDelta: this.zoomDelta,
       activeDevice: this.activeDevice

@@ -12,7 +12,7 @@ export interface CameraConfig {
 }
 
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
-  minPitch: 0.15, // ~8.5 deg
+  minPitch: -0.65, // ~-37 deg (allows looking up into the sky and tree canopies)
   maxPitch: 1.35, // ~77 deg
   minDistance: 2.5,
   maxDistance: 10.0,
@@ -130,9 +130,15 @@ export class CameraControllerCore {
   }
 
   private computeTransform(targetPosition: [number, number, number]): CameraTransformOutput {
+    const basePivotY = targetPosition[1] + this.state.pivotOffset[1];
+    const upwardLookBoost =
+      this.state.pitch < 0
+        ? Math.abs(Math.sin(this.state.pitch)) * this.state.effectiveDistance * 0.75
+        : 0;
+
     const lookAtTarget: [number, number, number] = [
       targetPosition[0] + this.state.pivotOffset[0],
-      targetPosition[1] + this.state.pivotOffset[1],
+      basePivotY + upwardLookBoost,
       targetPosition[2] + this.state.pivotOffset[2]
     ];
 
@@ -141,7 +147,7 @@ export class CameraControllerCore {
 
     const cameraPosition: [number, number, number] = [
       lookAtTarget[0] + horizDist * Math.sin(this.state.yaw),
-      lookAtTarget[1] + vertDist,
+      Math.max(0.35, basePivotY + vertDist),
       lookAtTarget[2] + horizDist * Math.cos(this.state.yaw)
     ];
 
