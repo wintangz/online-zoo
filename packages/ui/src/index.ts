@@ -4,4 +4,6 @@ export * from './TouchControlsOverlay';
 export * from './InteractionPromptBanner';
 export * from './InfoPlaqueModal';
 export * from './SettingsMenuModal';
-
+export * from './AvatarCustomizerModal';
+export * from './SocialInteractionOverlay';
+export * from './AnimalSimulationOverlay';

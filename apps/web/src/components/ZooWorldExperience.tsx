@@ -4,11 +4,14 @@ import React, { useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { InputController } from '@online-zoo/game-core';
 import {
+  AnimalSimulationOverlay,
+  AvatarCustomizerModal,
   EntryLoadingScreen,
   GameHudOverlay,
   InfoPlaqueModal,
   InteractionPromptBanner,
   SettingsMenuModal,
+  SocialInteractionOverlay,
   TouchControlsOverlay
 } from '@online-zoo/ui';
 
@@ -32,10 +35,13 @@ export const ZooWorldExperience: React.FC = () => {
       {/* 2D React + Tailwind Overlays */}
       <EntryLoadingScreen />
       <GameHudOverlay />
+      <AnimalSimulationOverlay />
+      <SocialInteractionOverlay />
       <TouchControlsOverlay inputController={inputController} />
       <InteractionPromptBanner inputController={inputController} />
       <InfoPlaqueModal />
       <SettingsMenuModal />
+      <AvatarCustomizerModal />
     </main>
   );
 };

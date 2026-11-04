@@ -7,5 +7,8 @@ export * from './environment/PondShoreline';
 export * from './environment/InstancedFoliage';
 export * from './environment/InteractiveProps';
 export * from './entities/PlayerAvatarEntity';
+export * from './entities/RemotePlayerAvatar';
+export * from './entities/RemotePlayersLayer';
 export * from './entities/FollowCameraRig';
+
 

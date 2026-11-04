@@ -7,4 +7,9 @@ export * from './input/touchInputBindings';
 export * from './character/characterController';
 export * from './camera/cameraController';
 export * from './interaction/interactionSystem';
+export * from './identity';
+export * from './social';
+export * from './animals';
+export * from './multiplayer';
+
 
