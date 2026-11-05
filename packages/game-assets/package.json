@@ -10,9 +10,9 @@
   },
   "scripts": {
     "build": "node scripts/generate-glb-assets.mjs && tsc --noEmit",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/generate-glb-assets.mjs && tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "node scripts/generate-glb-assets.mjs && vitest run"
   },
   "dependencies": {
     "three": "^0.169.0"

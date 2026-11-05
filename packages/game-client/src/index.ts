@@ -1,3 +1,4 @@
+export * from './materials/paletteMaterials';
 export * from './runtime/ZooGameCanvas';
 export * from './runtime/GameLoopController';
 export * from './environment/PandaForestScene';

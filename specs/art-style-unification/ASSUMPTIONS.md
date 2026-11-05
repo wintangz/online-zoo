@@ -1,0 +1,6 @@
+# Assumptions: Art Style Unification (`art-style-unification`)
+
+1. **Animal Manifest IDs**: The three current animal species (`panda`, `penguin`, `otter`) are registered in `ASSET_MANIFEST` as `'animal-panda'`, `'animal-penguin'`, and `'animal-otter'` with `category: 'character'` (or `'animal'`) and `zones: ['panda-forest']`. A lookup helper `getAnimalAssetId(speciesId)` maps any species ID to its manifest entry so future species slot in cleanly.
+2. **Dining & Kiosk Prop GLBs**: To eliminate code-assembled primitive stacks for the food stalls, cafe table, and picnic table in `InteractiveProps.tsx`, we register `'prop-food-stall'`, `'prop-cafe-table'`, and `'prop-picnic-table'` in `ASSET_MANIFEST` and generate flat-shaded low-poly `.glb` models for them using `ZOO_PALETTE`, while keeping all existing 6 manifest IDs and their `boundingRadius` values completely unchanged.
+3. **Shared Palette Materials Module**: `packages/game-client/src/materials/paletteMaterials.ts` re-exports `ZOO_PALETTE` and provides pre-configured flat-shaded `THREE.MeshStandardMaterial` and `THREE.MeshBasicMaterial` instances (as well as palette lookup helpers for avatar customization tones/outfits mapped to `ZOO_PALETTE`) so zero `#...`, `rgb(...)`, `hsl(...)`, or `0x...` literals appear anywhere in `packages/game-client/src/environment/**` or `packages/game-client/src/entities/**`.
+

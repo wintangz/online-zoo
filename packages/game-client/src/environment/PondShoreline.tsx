@@ -1,13 +1,18 @@
 import React, { useMemo } from 'react';
 import { RigidBody, CylinderCollider } from '@react-three/rapier';
 import { PANDA_FOREST_LAYOUT } from '@online-zoo/game-core';
+import { PALETTE_MATERIALS } from '../materials/paletteMaterials';
 
 export const PondShoreline: React.FC = () => {
   const { center, radius, shorelineColliderRadius } = PANDA_FOREST_LAYOUT.pond;
 
   const shorelineRocks = useMemo(() => {
     const count = 20;
-    const rocks: Array<{ pos: [number, number, number]; scale: [number, number, number]; rotY: number }> = [];
+    const rocks: Array<{
+      pos: [number, number, number];
+      scale: [number, number, number];
+      rotY: number;
+    }> = [];
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const r = radius + 0.15;
@@ -37,16 +42,14 @@ export const PondShoreline: React.FC = () => {
         <CylinderCollider args={[2.0, shorelineColliderRadius]} position={[0, 1.0, 0]} />
       </RigidBody>
 
-      {/* Stylized Spring Water Surface */}
-      <mesh receiveShadow position={[center[0], 0.04, center[2]]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[radius, 48]} />
-        <meshStandardMaterial
-          color="#38a3b8"
-          roughness={0.18}
-          metalness={0.25}
-          emissive="#124e5e"
-          emissiveIntensity={0.2}
-        />
+      {/* Stylized Flat-Shaded Spring Water Surface */}
+      <mesh
+        receiveShadow
+        position={[center[0], 0.04, center[2]]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={PALETTE_MATERIALS.pondWater}
+      >
+        <circleGeometry args={[radius, 24]} />
       </mesh>
 
       {/* Shoreline River Boulders */}
@@ -58,26 +61,27 @@ export const PondShoreline: React.FC = () => {
           position={rock.pos}
           rotation={[0, rock.rotY, 0]}
           scale={rock.scale}
+          material={PALETTE_MATERIALS.graniteSlate}
         >
-          <dodecahedronGeometry args={[0.6, 1]} />
-          <meshStandardMaterial color="#878e94" roughness={0.88} />
+          <dodecahedronGeometry args={[0.6, 0]} />
         </mesh>
       ))}
 
       {/* Floating Lily Pads & Lotus Blooms */}
       {lilyPads.map((pad, idx) => (
         <group key={`lily-pad-${idx}`} position={pad.pos}>
-          <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[pad.r, 20]} />
-            <meshStandardMaterial color="#429e52" roughness={0.75} />
+          <mesh
+            receiveShadow
+            rotation={[-Math.PI / 2, 0, 0]}
+            material={PALETTE_MATERIALS.leafCanopy}
+          >
+            <circleGeometry args={[pad.r, 12]} />
           </mesh>
-          <mesh castShadow position={[0, 0.08, 0]}>
-            <sphereGeometry args={[0.16, 12, 12]} />
-            <meshStandardMaterial color="#f7a8c4" roughness={0.5} />
+          <mesh castShadow position={[0, 0.08, 0]} material={PALETTE_MATERIALS.blossomPink}>
+            <dodecahedronGeometry args={[0.16, 0]} />
           </mesh>
         </group>
       ))}
     </group>
   );
 };
-

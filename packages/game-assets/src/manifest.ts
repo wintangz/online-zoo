@@ -1,10 +1,18 @@
+export type AnimalAssetId = 'animal-panda' | 'animal-penguin' | 'animal-otter';
+
 export type AssetId =
   | 'avatar-explorer'
   | 'prop-bamboo-cluster'
   | 'prop-stone-lantern'
   | 'prop-habitat-plaque'
   | 'prop-wind-chime'
-  | 'prop-wooden-bench';
+  | 'prop-wooden-bench'
+  | 'prop-food-stall'
+  | 'prop-cafe-table'
+  | 'prop-picnic-table'
+  | 'prop-ticket-booth'
+  | 'prop-fountain'
+  | AnimalAssetId;
 
 export type AssetZoneId = 'zoo-lobby' | 'panda-forest';
 
@@ -32,6 +40,12 @@ export const ZOO_PALETTE = {
 } as const;
 
 export type ZooPaletteColorKey = keyof typeof ZOO_PALETTE;
+
+export const ANIMAL_SPECIES_TO_ASSET_ID: Record<'panda' | 'penguin' | 'otter', AnimalAssetId> = {
+  panda: 'animal-panda',
+  penguin: 'animal-penguin',
+  otter: 'animal-otter'
+};
 
 export interface AssetManifestEntry {
   id: AssetId;
@@ -90,11 +104,79 @@ export const ASSET_MANIFEST: Record<AssetId, AssetManifestEntry> = {
     preload: true,
     boundingRadius: 1.3,
     zones: ['zoo-lobby', 'panda-forest']
+  },
+  'animal-panda': {
+    id: 'animal-panda',
+    url: '/assets/models/animal-panda.glb',
+    category: 'character',
+    preload: true,
+    boundingRadius: 1.1,
+    zones: ['panda-forest']
+  },
+  'animal-penguin': {
+    id: 'animal-penguin',
+    url: '/assets/models/animal-penguin.glb',
+    category: 'character',
+    preload: true,
+    boundingRadius: 0.75,
+    zones: ['panda-forest']
+  },
+  'animal-otter': {
+    id: 'animal-otter',
+    url: '/assets/models/animal-otter.glb',
+    category: 'character',
+    preload: true,
+    boundingRadius: 0.85,
+    zones: ['panda-forest']
+  },
+  'prop-food-stall': {
+    id: 'prop-food-stall',
+    url: '/assets/models/prop-food-stall.glb',
+    category: 'interactive-prop',
+    preload: true,
+    boundingRadius: 1.8,
+    zones: ['panda-forest']
+  },
+  'prop-cafe-table': {
+    id: 'prop-cafe-table',
+    url: '/assets/models/prop-cafe-table.glb',
+    category: 'interactive-prop',
+    preload: true,
+    boundingRadius: 1.4,
+    zones: ['panda-forest']
+  },
+  'prop-picnic-table': {
+    id: 'prop-picnic-table',
+    url: '/assets/models/prop-picnic-table.glb',
+    category: 'interactive-prop',
+    preload: true,
+    boundingRadius: 1.5,
+    zones: ['panda-forest']
+  },
+  'prop-ticket-booth': {
+    id: 'prop-ticket-booth',
+    url: '/assets/models/prop-ticket-booth.glb',
+    category: 'environment',
+    preload: true,
+    boundingRadius: 1.9,
+    zones: ['zoo-lobby']
+  },
+  'prop-fountain': {
+    id: 'prop-fountain',
+    url: '/assets/models/prop-fountain.glb',
+    category: 'interactive-prop',
+    preload: true,
+    boundingRadius: 1.6,
+    zones: ['zoo-lobby']
   }
 };
 
 export function getAssetUrl(id: AssetId): string {
   return ASSET_MANIFEST[id].url;
+}
+
+export function getAnimalAssetId(speciesId: 'panda' | 'penguin' | 'otter'): AnimalAssetId {
+  return ANIMAL_SPECIES_TO_ASSET_ID[speciesId];
 }
 
 export function getPreloadUrls(): string[] {

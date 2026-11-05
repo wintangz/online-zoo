@@ -4,13 +4,14 @@ import { useGLTF } from '@react-three/drei';
 import { RigidBody, CuboidCollider, CylinderCollider } from '@react-three/rapier';
 import { useStore } from 'zustand';
 import * as THREE from 'three';
-import { getAssetUrl, ZOO_PALETTE } from '@online-zoo/game-assets';
+import { getAssetUrl } from '@online-zoo/game-assets';
 import {
   findGateLinkByObjectId,
   gameStore,
   MultiplayerClient,
   PANDA_FOREST_INTERACTIVE_OBJECTS
 } from '@online-zoo/game-core';
+import { PALETTE_COLORS, PALETTE_MATERIALS } from '../materials/paletteMaterials';
 
 export interface InteractivePropsProps {
   multiplayerClient?: MultiplayerClient;
@@ -21,11 +22,14 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
   const propStates = useStore(gameStore, (s) => s.propStates);
   const seatStates = useStore(gameStore, (s) => s.social.seatStates);
 
-  // Load real .glb assets through useGLTF (Architecture Requirement 8)
+  // Load real .glb assets through useGLTF from ASSET_MANIFEST
   const plaqueGltf = useGLTF(getAssetUrl('prop-habitat-plaque'));
   const lanternGltf = useGLTF(getAssetUrl('prop-stone-lantern'));
   const chimeGltf = useGLTF(getAssetUrl('prop-wind-chime'));
   const benchGltf = useGLTF(getAssetUrl('prop-wooden-bench'));
+  const foodStallGltf = useGLTF(getAssetUrl('prop-food-stall'));
+  const cafeTableGltf = useGLTF(getAssetUrl('prop-cafe-table'));
+  const picnicTableGltf = useGLTF(getAssetUrl('prop-picnic-table'));
 
   const chimeGroupRef = useRef<THREE.Group>(null);
   const targetRingRef = useRef<THREE.Mesh>(null);
@@ -138,12 +142,12 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
     (o) => o.id === 'gate-to-zoo-lobby'
   ) ?? {
     id: 'gate-to-zoo-lobby',
-    position: [0, 0, 22.8] as [number, number, number]
+    position: [0, 0, 16.4] as [number, number, number]
   };
 
   return (
     <group name="panda-forest-interactive-props">
-      {/* Solid Rapier Colliders for interactive signs, plaques, lantern, chime pavilion, and benches/chairs (FR-023, FR-012) */}
+      {/* Solid Rapier Colliders for interactive signs, plaques, lantern, chime pavilion, and benches/chairs */}
       <RigidBody type="fixed" colliders={false} name="interactive-props-colliders">
         <CylinderCollider
           args={[1.0, 0.55]}
@@ -211,26 +215,33 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
         <primitive object={plaqueGltf.scene.clone()} />
       </group>
 
-      {/* 3. Stone Garden Lantern (toggle_lantern world_prop) */}
+      {/* 3. Stone Garden Lantern */}
       <group
         position={obj2.position}
         onClick={() => handlePropClick(obj2.id)}
       >
         <primitive object={lanternGltf.scene.clone()} />
-        <mesh position={[0, 1.6, 0]}>
-          <sphereGeometry args={[0.26, 16, 16]} />
-          <meshStandardMaterial
-            color={lanternActive ? '#ffd54f' : '#52585c'}
-            emissive={lanternActive ? '#ffab00' : '#000000'}
-            emissiveIntensity={lanternActive ? 2.2 : 0}
-          />
+        <mesh
+          position={[0, 1.6, 0]}
+          material={
+            lanternActive
+              ? PALETTE_MATERIALS.lanternLit
+              : PALETTE_MATERIALS.lanternUnlit
+          }
+        >
+          <dodecahedronGeometry args={[0.26, 0]} />
         </mesh>
         {lanternActive && (
-          <pointLight position={[0, 1.7, 0]} color="#ffca58" intensity={4.5} distance={9} />
+          <pointLight
+            position={[0, 1.7, 0]}
+            color={PALETTE_COLORS.lanternAmber}
+            intensity={4.5}
+            distance={9}
+          />
         )}
       </group>
 
-      {/* 4. Bamboo Wind Chime Pavilion (ring_chime world_prop) */}
+      {/* 4. Bamboo Wind Chime Pavilion */}
       <group
         position={obj3.position}
         rotation={[0, -0.5, 0]}
@@ -241,7 +252,7 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
         </group>
       </group>
 
-      {/* 5. Scenic Overlook Bench (2-seat rest_bench world_prop) */}
+      {/* 5. Scenic Overlook Bench */}
       <group
         position={obj4.position}
         rotation={[0, 0.25, 0]}
@@ -249,18 +260,21 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
       >
         <primitive object={benchGltf.scene.clone()} />
         {scenicBenchSeats.map((slot, idx) => (
-          <mesh key={slot.seatIndex} position={[idx === 0 ? -0.42 : 0.42, 0.62, 0]}>
+          <mesh
+            key={slot.seatIndex}
+            position={[idx === 0 ? -0.42 : 0.42, 0.62, 0]}
+            material={
+              slot.occupiedBySessionId
+                ? PALETTE_MATERIALS.seatOccupied
+                : PALETTE_MATERIALS.seatAvailable
+            }
+          >
             <boxGeometry args={[0.62, 0.06, 0.45]} />
-            <meshStandardMaterial
-              color={slot.occupiedBySessionId ? '#f59e0b' : '#7be396'}
-              emissive={slot.occupiedBySessionId ? '#d97706' : '#39b85e'}
-              emissiveIntensity={slot.occupiedBySessionId ? 0.9 : 0.35}
-            />
           </mesh>
         ))}
       </group>
 
-      {/* 6. Entry Plaza Bamboo Bench (2-seat rest_bench near spawn) */}
+      {/* 6. Entry Plaza Bamboo Bench */}
       <group
         position={obj5.position}
         rotation={[0, 0.15, 0]}
@@ -268,18 +282,21 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
       >
         <primitive object={benchGltf.scene.clone()} />
         {plazaBenchSeats.map((slot, idx) => (
-          <mesh key={slot.seatIndex} position={[idx === 0 ? -0.42 : 0.42, 0.62, 0]}>
+          <mesh
+            key={slot.seatIndex}
+            position={[idx === 0 ? -0.42 : 0.42, 0.62, 0]}
+            material={
+              slot.occupiedBySessionId
+                ? PALETTE_MATERIALS.seatOccupied
+                : PALETTE_MATERIALS.seatAvailable
+            }
+          >
             <boxGeometry args={[0.62, 0.06, 0.45]} />
-            <meshStandardMaterial
-              color={slot.occupiedBySessionId ? '#f59e0b' : '#7be396'}
-              emissive={slot.occupiedBySessionId ? '#d97706' : '#39b85e'}
-              emissiveIntensity={slot.occupiedBySessionId ? 0.9 : 0.35}
-            />
           </mesh>
         ))}
       </group>
 
-      {/* 7. Lotus Pond Viewing Chair (1-seat rest_bench near pond) */}
+      {/* 7. Lotus Pond Viewing Chair */}
       <group
         position={obj6.position}
         rotation={[0, -0.45, 0]}
@@ -289,228 +306,117 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
           <primitive object={benchGltf.scene.clone()} />
         </group>
         {pondChairSeats.map((slot) => (
-          <mesh key={slot.seatIndex} position={[0, 0.62, 0]}>
+          <mesh
+            key={slot.seatIndex}
+            position={[0, 0.62, 0]}
+            material={
+              slot.occupiedBySessionId
+                ? PALETTE_MATERIALS.seatOccupied
+                : PALETTE_MATERIALS.seatAvailable
+            }
+          >
             <boxGeometry args={[0.55, 0.06, 0.45]} />
-            <meshStandardMaterial
-              color={slot.occupiedBySessionId ? '#f59e0b' : '#7be396'}
-              emissive={slot.occupiedBySessionId ? '#d97706' : '#39b85e'}
-              emissiveIntensity={slot.occupiedBySessionId ? 0.9 : 0.35}
-            />
           </mesh>
         ))}
       </group>
 
-      {/* 8. Plaza Refreshment Kiosk (Food Stall #1 - Feature 006) */}
+      {/* 8. Plaza Refreshment Kiosk (Registered GLB prop-food-stall) */}
       <group
         name="prop-plaza-food-stall"
         position={plazaFoodStallObj.position}
         rotation={[0, 0.35, 0]}
         onClick={() => handlePropClick(plazaFoodStallObj.id)}
       >
-        {/* Wooden Counter Base */}
-        <mesh position={[0, 0.55, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.9, 1.1, 1.25]} />
-          <meshStandardMaterial color="#8b5a2b" roughness={0.78} />
-        </mesh>
-        {/* Countertop */}
-        <mesh position={[0, 1.14, 0.06]} castShadow receiveShadow>
-          <boxGeometry args={[2.05, 0.1, 1.38]} />
-          <meshStandardMaterial color="#e6ccb2" roughness={0.65} />
-        </mesh>
-        {/* Support Posts */}
-        <mesh position={[-0.85, 1.75, 0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#5c3a21" roughness={0.8} />
-        </mesh>
-        <mesh position={[0.85, 1.75, 0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#5c3a21" roughness={0.8} />
-        </mesh>
-        <mesh position={[-0.85, 1.75, -0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#5c3a21" roughness={0.8} />
-        </mesh>
-        <mesh position={[0.85, 1.75, -0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#5c3a21" roughness={0.8} />
-        </mesh>
-        {/* Striped Canopy Awning Roof */}
-        <mesh position={[0, 2.48, 0]} castShadow>
-          <coneGeometry args={[1.55, 0.72, 4]} />
-          <meshStandardMaterial color="#10b981" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 2.22, 0.68]} rotation={[0.3, 0, 0]}>
-          <boxGeometry args={[2.1, 0.16, 0.12]} />
-          <meshStandardMaterial color="#f59e0b" roughness={0.5} />
-        </mesh>
-        {/* Sample Food & Drink Props on Counter */}
-        <mesh position={[-0.45, 1.32, 0.25]} castShadow>
-          <cylinderGeometry args={[0.1, 0.08, 0.26, 12]} />
-          <meshStandardMaterial color="#d69e66" roughness={0.5} />
-        </mesh>
-        <mesh position={[0, 1.28, 0.28]} castShadow>
-          <sphereGeometry args={[0.14, 14, 12]} />
-          <meshStandardMaterial color="#d97706" roughness={0.65} />
-        </mesh>
-        <mesh position={[0.45, 1.32, 0.25]} castShadow>
-          <cylinderGeometry args={[0.11, 0.08, 0.24, 12]} />
-          <meshStandardMaterial color="#fbbf24" roughness={0.55} />
-        </mesh>
-        <pointLight position={[0, 2.0, 0.4]} color="#ffe082" intensity={2.2} distance={6} />
+        <primitive object={foodStallGltf.scene.clone()} />
+        <pointLight
+          position={[0, 2.0, 0.4]}
+          color={PALETTE_COLORS.sunflowerGold}
+          intensity={2.2}
+          distance={6}
+        />
       </group>
 
-      {/* 9. Bamboo Tea & Snack Stall (Food Stall #2 - Feature 006) */}
+      {/* 9. Bamboo Tea & Snack Stall (Registered GLB prop-food-stall) */}
       <group
         name="prop-bamboo-tea-stall"
         position={bambooTeaStallObj.position}
         rotation={[0, -0.65, 0]}
         onClick={() => handlePropClick(bambooTeaStallObj.id)}
       >
-        <mesh position={[0, 0.55, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.9, 1.1, 1.25]} />
-          <meshStandardMaterial color="#6b8e23" roughness={0.75} />
-        </mesh>
-        <mesh position={[0, 1.14, 0.06]} castShadow receiveShadow>
-          <boxGeometry args={[2.05, 0.1, 1.38]} />
-          <meshStandardMaterial color="#f3e5ab" roughness={0.62} />
-        </mesh>
-        <mesh position={[-0.85, 1.75, 0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#4a6b18" roughness={0.75} />
-        </mesh>
-        <mesh position={[0.85, 1.75, 0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#4a6b18" roughness={0.75} />
-        </mesh>
-        <mesh position={[-0.85, 1.75, -0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#4a6b18" roughness={0.75} />
-        </mesh>
-        <mesh position={[0.85, 1.75, -0.5]} castShadow>
-          <cylinderGeometry args={[0.06, 0.06, 1.3, 10]} />
-          <meshStandardMaterial color="#4a6b18" roughness={0.75} />
-        </mesh>
-        <mesh position={[0, 2.48, 0]} castShadow>
-          <coneGeometry args={[1.55, 0.72, 6]} />
-          <meshStandardMaterial color="#d97706" roughness={0.6} />
-        </mesh>
-        <mesh position={[-0.4, 1.32, 0.24]} castShadow>
-          <cylinderGeometry args={[0.1, 0.08, 0.28, 12]} />
-          <meshStandardMaterial color="#38bdf8" roughness={0.4} />
-        </mesh>
-        <mesh position={[0.35, 1.32, 0.24]} castShadow>
-          <coneGeometry args={[0.11, 0.28, 12]} />
-          <meshStandardMaterial color="#fdf4ff" roughness={0.5} />
-        </mesh>
-        <pointLight position={[0, 2.0, 0.4]} color="#ffd54f" intensity={2.2} distance={6} />
+        <primitive object={foodStallGltf.scene.clone()} />
+        <pointLight
+          position={[0, 2.0, 0.4]}
+          color={PALETTE_COLORS.sunflowerGold}
+          intensity={2.2}
+          distance={6}
+        />
       </group>
 
-      {/* 10. Plaza Umbrella Dining Table (4-seat communal table - Feature 006) */}
+      {/* 10. Plaza Umbrella Dining Table (Registered GLB prop-cafe-table) */}
       <group
         name="prop-plaza-cafe-table"
         position={plazaCafeTableObj.position}
         onClick={() => handlePropClick(plazaCafeTableObj.id)}
       >
-        {/* Table Pedestal & Round Tabletop */}
-        <mesh position={[0, 0.42, 0]} castShadow>
-          <cylinderGeometry args={[0.12, 0.26, 0.84, 14]} />
-          <meshStandardMaterial color="#5c3a21" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, 0.84, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[0.68, 0.68, 0.08, 22]} />
-          <meshStandardMaterial color="#d2a679" roughness={0.65} />
-        </mesh>
-        {/* Parasol Pole & Canopy */}
-        <mesh position={[0, 1.65, 0]} castShadow>
-          <cylinderGeometry args={[0.04, 0.04, 1.65, 10]} />
-          <meshStandardMaterial color="#e5e7eb" roughness={0.5} />
-        </mesh>
-        <mesh position={[0, 2.48, 0]} castShadow>
-          <coneGeometry args={[1.35, 0.48, 8]} />
-          <meshStandardMaterial color="#14b8a6" roughness={0.6} />
-        </mesh>
-        {/* 4 Seats around the table (North, East, South, West) */}
+        <primitive object={cafeTableGltf.scene.clone()} />
         {plazaCafeTableSeats.map((slot) => {
           const offsetX = slot.worldPosition[0] - plazaCafeTableObj.position[0];
           const offsetZ = slot.worldPosition[2] - plazaCafeTableObj.position[2];
           return (
             <group key={slot.seatIndex} position={[offsetX, 0, offsetZ]}>
-              <mesh position={[0, 0.28, 0]} castShadow>
-                <cylinderGeometry args={[0.24, 0.2, 0.52, 14]} />
-                <meshStandardMaterial color="#8b5a2b" roughness={0.78} />
-              </mesh>
-              <mesh position={[0, 0.56, 0]}>
-                <cylinderGeometry args={[0.25, 0.25, 0.05, 14]} />
-                <meshStandardMaterial
-                  color={slot.occupiedBySessionId ? '#f59e0b' : '#7be396'}
-                  emissive={slot.occupiedBySessionId ? '#d97706' : '#39b85e'}
-                  emissiveIntensity={slot.occupiedBySessionId ? 0.9 : 0.35}
-                />
+              <mesh
+                position={[0, 0.56, 0]}
+                material={
+                  slot.occupiedBySessionId
+                    ? PALETTE_MATERIALS.seatOccupied
+                    : PALETTE_MATERIALS.seatAvailable
+                }
+              >
+                <cylinderGeometry args={[0.25, 0.25, 0.05, 8]} />
               </mesh>
             </group>
           );
         })}
       </group>
 
-      {/* 11. Bamboo Grove Picnic Table (4-seat communal table - Feature 006) */}
+      {/* 11. Bamboo Grove Picnic Table (Registered GLB prop-picnic-table) */}
       <group
         name="prop-bamboo-picnic-table"
         position={bambooPicnicTableObj.position}
         onClick={() => handlePropClick(bambooPicnicTableObj.id)}
       >
-        {/* Picnic Table Top & Legs */}
-        <mesh position={[0, 0.78, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.92, 0.08, 1.65]} />
-          <meshStandardMaterial color="#9c6634" roughness={0.74} />
-        </mesh>
-        <mesh position={[0, 0.38, -0.55]} castShadow>
-          <boxGeometry args={[0.8, 0.76, 0.12]} />
-          <meshStandardMaterial color="#6e4720" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, 0.38, 0.55]} castShadow>
-          <boxGeometry args={[0.8, 0.76, 0.12]} />
-          <meshStandardMaterial color="#6e4720" roughness={0.8} />
-        </mesh>
-        {/* West & East Benches */}
-        <mesh position={[-0.95, 0.46, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.38, 0.08, 1.55]} />
-          <meshStandardMaterial color="#8b5a2b" roughness={0.78} />
-        </mesh>
-        <mesh position={[0.95, 0.46, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.38, 0.08, 1.55]} />
-          <meshStandardMaterial color="#8b5a2b" roughness={0.78} />
-        </mesh>
-        {/* 4 Seat Availability Pads */}
+        <primitive object={picnicTableGltf.scene.clone()} />
         {bambooPicnicTableSeats.map((slot) => {
           const offsetX = slot.worldPosition[0] - bambooPicnicTableObj.position[0];
           const offsetZ = slot.worldPosition[2] - bambooPicnicTableObj.position[2];
           return (
-            <mesh key={slot.seatIndex} position={[offsetX, 0.52, offsetZ]}>
+            <mesh
+              key={slot.seatIndex}
+              position={[offsetX, 0.52, offsetZ]}
+              material={
+                slot.occupiedBySessionId
+                  ? PALETTE_MATERIALS.seatOccupied
+                  : PALETTE_MATERIALS.seatAvailable
+              }
+            >
               <boxGeometry args={[0.36, 0.05, 0.52]} />
-              <meshStandardMaterial
-                color={slot.occupiedBySessionId ? '#f59e0b' : '#7be396'}
-                emissive={slot.occupiedBySessionId ? '#d97706' : '#39b85e'}
-                emissiveIntensity={slot.occupiedBySessionId ? 0.9 : 0.35}
-              />
             </mesh>
           );
         })}
       </group>
 
-      {/* 12. South Return Gate Portal to Zoo Lobby (world-zones FR-004, FR-005) */}
+      {/* 12. South Return Gate Portal to Zoo Lobby */}
       <group
         name="gate-to-zoo-lobby"
         position={southGateToLobbyObj.position}
         onClick={() => handlePropClick(southGateToLobbyObj.id)}
       >
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.05, 0]}
+          material={PALETTE_MATERIALS.portalRing}
+        >
           <ringGeometry args={[1.35, 2.05, 16]} />
-          <meshStandardMaterial
-            color={ZOO_PALETTE.sunflowerGold}
-            emissive={ZOO_PALETTE.lanternAmber}
-            emissiveIntensity={0.65}
-            flatShading
-          />
         </mesh>
       </group>
 
@@ -519,13 +425,9 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
         <mesh
           ref={targetRingRef}
           position={[focusedObject.position[0], 2.35, focusedObject.position[2]]}
+          material={PALETTE_MATERIALS.focusBeacon}
         >
           <octahedronGeometry args={[0.24, 0]} />
-          <meshStandardMaterial
-            color="#ffe066"
-            emissive="#f59f00"
-            emissiveIntensity={1.4}
-          />
         </mesh>
       )}
     </group>

@@ -4,6 +4,7 @@ import { Sky } from '@react-three/drei';
 import { useStore } from 'zustand';
 import * as THREE from 'three';
 import { gameStore, SEASONAL_THEMES_BY_ID } from '@online-zoo/game-core';
+import { PALETTE_COLORS, PALETTE_MATERIALS } from '../materials/paletteMaterials';
 import { TerrainAndPaths } from './TerrainAndPaths';
 import { PerimeterEnclosure } from './PerimeterEnclosure';
 import { PondShoreline } from './PondShoreline';
@@ -42,7 +43,6 @@ const SkyAndAtmosphere: React.FC = () => {
       pos: [number, number, number];
       height: number;
       coneRadius: number;
-      color: string;
     }> = [];
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + 0.18;
@@ -52,8 +52,7 @@ const SkyAndAtmosphere: React.FC = () => {
         id: `mountain-peak-${i}`,
         pos: [Math.sin(angle) * radius, height * 0.42, Math.cos(angle) * radius],
         height,
-        coneRadius,
-        color: i % 2 === 0 ? '#6aa5b8' : '#5b93a8'
+        coneRadius
       });
     }
     return peaks;
@@ -77,72 +76,49 @@ const SkyAndAtmosphere: React.FC = () => {
         mieDirectionalG={0.82}
       />
 
-      {/* Stylized Glowing Sun Disc & Corona Halo */}
+      {/* Stylized Low-Poly Sun Disc & Corona Halo */}
       <group position={[36, 42, -48]}>
-        <mesh name="sky-sun-disc">
-          <sphereGeometry args={[4.2, 24, 24]} />
-          <meshBasicMaterial color="#fff7cc" fog={false} />
+        <mesh name="sky-sun-disc" material={PALETTE_MATERIALS.sunDisc}>
+          <dodecahedronGeometry args={[4.2, 0]} />
         </mesh>
-        <mesh name="sky-sun-halo">
-          <sphereGeometry args={[6.8, 24, 24]} />
-          <meshBasicMaterial color="#ffe082" transparent opacity={0.28} fog={false} />
+        <mesh name="sky-sun-halo" material={PALETTE_MATERIALS.sunHalo}>
+          <dodecahedronGeometry args={[6.8, 0]} />
         </mesh>
       </group>
 
-      {/* Drifting Stylized Fluffy 3D Cloud Clusters overhead */}
+      {/* Drifting Stylized Low-Poly Cloud Clusters overhead */}
       <group ref={cloudsGroupRef} name="sky-cloud-clusters">
         {CLOUD_CLUSTERS.map((cloud) => (
           <group key={cloud.id} position={cloud.basePos} scale={cloud.scale}>
-            <mesh position={[0, 0, 0]}>
-              <sphereGeometry args={[2.4, 14, 12]} />
-              <meshStandardMaterial
-                color="#ffffff"
-                emissive="#e8f4ff"
-                emissiveIntensity={0.35}
-                roughness={0.9}
-                fog={false}
-              />
+            <mesh position={[0, 0, 0]} material={PALETTE_MATERIALS.cloudPuff}>
+              <dodecahedronGeometry args={[2.4, 0]} />
             </mesh>
-            <mesh position={[2.0, -0.3, 0.4]}>
-              <sphereGeometry args={[1.8, 12, 10]} />
-              <meshStandardMaterial
-                color="#f8fcff"
-                emissive="#e0f0ff"
-                emissiveIntensity={0.3}
-                roughness={0.9}
-                fog={false}
-              />
+            <mesh position={[2.0, -0.3, 0.4]} material={PALETTE_MATERIALS.cloudPuff}>
+              <dodecahedronGeometry args={[1.8, 0]} />
             </mesh>
-            <mesh position={[-1.9, -0.35, -0.3]}>
-              <sphereGeometry args={[1.7, 12, 10]} />
-              <meshStandardMaterial
-                color="#f8fcff"
-                emissive="#e0f0ff"
-                emissiveIntensity={0.3}
-                roughness={0.9}
-                fog={false}
-              />
+            <mesh position={[-1.9, -0.35, -0.3]} material={PALETTE_MATERIALS.cloudPuff}>
+              <dodecahedronGeometry args={[1.7, 0]} />
             </mesh>
-            <mesh position={[0.5, 0.5, -1.3]}>
-              <sphereGeometry args={[1.6, 12, 10]} />
-              <meshStandardMaterial
-                color="#ffffff"
-                emissive="#e8f4ff"
-                emissiveIntensity={0.35}
-                roughness={0.9}
-                fog={false}
-              />
+            <mesh position={[0.5, 0.5, -1.3]} material={PALETTE_MATERIALS.cloudPuff}>
+              <dodecahedronGeometry args={[1.6, 0]} />
             </mesh>
           </group>
         ))}
       </group>
 
-      {/* Distant Misty Sichuan Highland Mountain Silhouettes around the Horizon */}
+      {/* Distant Misty Highland Mountain Silhouettes around the Horizon */}
       <group name="distant-horizon-mountains">
-        {distantPeaks.map((peak) => (
-          <mesh key={peak.id} position={peak.pos}>
+        {distantPeaks.map((peak, idx) => (
+          <mesh
+            key={peak.id}
+            position={peak.pos}
+            material={
+              idx % 2 === 0
+                ? PALETTE_MATERIALS.skyMistMountain
+                : PALETTE_MATERIALS.graniteSlate
+            }
+          >
             <coneGeometry args={[peak.coneRadius, peak.height, 7]} />
-            <meshStandardMaterial color={peak.color} roughness={0.95} />
           </mesh>
         ))}
       </group>
@@ -177,13 +153,19 @@ const SeasonalFestivalDecorations: React.FC = () => {
       {/* Festive Sanctuary Arches & Garlands */}
       {archPositions.map((pos, idx) => (
         <group key={`seasonal-arch-${idx}`} position={pos}>
-          <mesh position={[-1.8, 1.5, 0]} castShadow>
+          <mesh
+            position={[-1.8, 1.5, 0]}
+            castShadow
+            material={PALETTE_MATERIALS.cedarBark}
+          >
             <cylinderGeometry args={[0.1, 0.12, 3.0, 8]} />
-            <meshStandardMaterial color="#7c2d12" roughness={0.8} />
           </mesh>
-          <mesh position={[1.8, 1.5, 0]} castShadow>
+          <mesh
+            position={[1.8, 1.5, 0]}
+            castShadow
+            material={PALETTE_MATERIALS.cedarBark}
+          >
             <cylinderGeometry args={[0.1, 0.12, 3.0, 8]} />
-            <meshStandardMaterial color="#7c2d12" roughness={0.8} />
           </mesh>
           <mesh position={[0, 3.05, 0]} castShadow>
             <boxGeometry args={[4.1, 0.22, 0.28]} />
@@ -192,6 +174,7 @@ const SeasonalFestivalDecorations: React.FC = () => {
               emissive={themeDesc.foliageTintHex}
               emissiveIntensity={0.28}
               roughness={0.5}
+              flatShading
             />
           </mesh>
           {/* Hanging Seasonal Clusters / Lanterns */}
@@ -200,12 +183,13 @@ const SeasonalFestivalDecorations: React.FC = () => {
               key={`arch-ornament-${idx}-${lIdx}`}
               position={[offsetX, 2.65, 0]}
             >
-              <sphereGeometry args={[0.26, 12, 12]} />
+              <dodecahedronGeometry args={[0.26, 0]} />
               <meshStandardMaterial
                 color={themeDesc.foliageTintHex}
                 emissive={themeDesc.accentColor}
                 emissiveIntensity={0.65}
                 roughness={0.35}
+                flatShading
               />
             </mesh>
           ))}
@@ -226,12 +210,13 @@ const SeasonalFestivalDecorations: React.FC = () => {
             key={`seasonal-orb-${idx}`}
             position={pos as [number, number, number]}
           >
-            <sphereGeometry args={[0.2, 10, 10]} />
+            <dodecahedronGeometry args={[0.2, 0]} />
             <meshStandardMaterial
               color={themeDesc.foliageTintHex}
               emissive={themeDesc.accentColor}
               emissiveIntensity={0.75}
               roughness={0.3}
+              flatShading
             />
           </mesh>
         ))}
@@ -243,17 +228,19 @@ const SeasonalFestivalDecorations: React.FC = () => {
 export const PandaForestScene: React.FC<GameLoopControllerProps> = (props) => {
   return (
     <group name="panda-forest-root-scene">
-      {/* Stylized Sunlight, Sky Dome, Fluffy Clouds & Warm Highland Mist */}
-      <color attach="background" args={['#b8e4ff']} />
-      <fog attach="fog" args={['#cceeff', 38, 130]} />
+      {/* Flat-Shaded Sunlight, Sky Dome, Low-Poly Clouds & Highland Mist */}
+      <color attach="background" args={[PALETTE_COLORS.skyMist]} />
+      <fog attach="fog" args={[PALETTE_COLORS.skyMist, 38, 130]} />
       <SkyAndAtmosphere />
-      <ambientLight intensity={0.68} color="#f5f9ff" />
-      <hemisphereLight args={['#9ee0ff', '#3a7a48', 0.6]} />
+      <ambientLight intensity={0.68} color={PALETTE_COLORS.snowCream} />
+      <hemisphereLight
+        args={[PALETTE_COLORS.skyMist, PALETTE_COLORS.leafCanopy, 0.6]}
+      />
       <directionalLight
         castShadow
         position={[36, 42, -48]}
         intensity={1.4}
-        color="#fff6e0"
+        color={PALETTE_COLORS.snowCream}
         shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-30}
         shadow-camera-right={30}
@@ -282,4 +269,3 @@ export const PandaForestScene: React.FC<GameLoopControllerProps> = (props) => {
     </group>
   );
 };
-
