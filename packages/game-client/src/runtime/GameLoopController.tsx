@@ -104,6 +104,14 @@ export function stepGameRuntimeTick(
   if (snapshot.menuPressed) {
     if (storeState.activePlaqueModal) {
       storeState.closePlaqueModal();
+    } else if (storeState.dining.activeStallId) {
+      storeState.closeFoodStall();
+    } else if (storeState.dining.isInventoryOpen) {
+      storeState.setInventoryOpen(false);
+    } else if (storeState.passport.isPassportOpen) {
+      storeState.setPassportOpen(false);
+    } else if (storeState.events.isEventsModalOpen) {
+      storeState.setEventsModalOpen(false);
     } else if (storeState.animalSim.inspectedAnimalId) {
       storeState.inspectAnimal(null);
     } else if (storeState.animalSim.isEncyclopediaOpen) {
@@ -228,7 +236,22 @@ export function stepGameRuntimeTick(
       adist <= ANIMAL_DISCOVERY_RADIUS_METERS &&
       !currentEncyclopedia.entries[animal.speciesId].discovered
     ) {
-      storeState.discoverAnimalSpecies(animal.speciesId);
+      const newlyDiscovered = storeState.discoverAnimalSpecies(animal.speciesId);
+      if (newlyDiscovered) {
+        multiplayerClient?.recordPassportProgress({
+          speciesId: animal.speciesId
+        });
+      }
+    }
+  }
+
+  // 3c. Evaluate natural Zoo Passport zone stamps (FR-001..FR-004, SC-001)
+  const zoneRes = storeState.evaluateProximityPassportZones(
+    mutableRuntimeState.avatar.position
+  );
+  if (zoneRes.newlyStampedZoneIds.length > 0) {
+    for (const zId of zoneRes.newlyStampedZoneIds) {
+      multiplayerClient?.recordPassportProgress({ zoneId: zId });
     }
   }
 
@@ -301,6 +324,13 @@ export function stepGameRuntimeTick(
           } else {
             inputController.resetAll();
             storeState.openPlaqueModal(triggered.descriptor);
+          }
+        } else if (triggered.descriptor.propReactionType === 'open_food_stall') {
+          if (storeState.dining.activeStallId === triggered.descriptor.id) {
+            storeState.closeFoodStall();
+          } else {
+            inputController.resetAll();
+            storeState.openFoodStall(triggered.descriptor.id);
           }
         } else if (triggered.descriptor.seats && triggered.descriptor.seats.length > 0) {
           const isSeatedHere =
