@@ -6,11 +6,33 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
   }) => {
     await page.goto('/');
 
-    // 1. Entry / Loading Screen (US4, FR-019, SC-001)
+    // 1. Pre-Game Main Menu before canvas mounts (main-menu: Profile, Zone selector, Settings, Failure states)
+    await expect(page.getByTestId('main-menu-screen')).toBeVisible();
+    await expect(page.getByTestId('main-menu-profile-block')).toBeVisible();
+    await expect(page.getByTestId('main-menu-zone-block')).toBeVisible();
+    await expect(page.getByTestId('zoo-game-canvas-container')).toHaveCount(0);
+
+    // Settings reachable from Main Menu and shared with in-game
+    await page.getByTestId('main-menu-settings-btn').click();
+    await expect(page.getByTestId('settings-menu-modal')).toBeVisible();
+    await page.getByTestId('audio-mute-toggle').check();
+    await page.getByTestId('resume-game-btn').click();
+    await expect(page.getByTestId('settings-menu-modal')).toBeHidden();
+
+    // Name rejected failure state on Main Menu
+    const nameInput = page.getByTestId('main-menu-display-name-input');
+    await nameInput.fill('!');
     const enterBtn = page.getByTestId('enter-world-btn');
     await expect(enterBtn).toBeVisible();
     await expect(enterBtn).toBeEnabled({ timeout: 10000 });
     await enterBtn.click();
+    await expect(page.getByTestId('menu-error-name-rejected')).toBeVisible();
+    await expect(page.getByTestId('zoo-game-canvas-container')).toHaveCount(0);
+
+    // Restore valid name and click PLAY to mount canvas and join selected zone
+    await nameInput.fill('BambooExplorer');
+    await enterBtn.click();
+    await expect(page.getByTestId('zoo-game-canvas-container')).toBeVisible();
 
     // 2. Minimal HUD & Initial Idle State (US1, US4)
     const hud = page.getByTestId('game-hud-overlay');

@@ -6,3 +6,4 @@
    - In `zoo-lobby`: Gate `'gate-to-panda-forest'` is located at the north archway `[0, 0, -14.0]` (trigger radius `3.2m`). Confirming `'Enter Panda Forest?'` transitions to `'panda-forest-1'` and spawns the player at `[0, 0.1, 14.2]` facing North (`Math.PI`), just inside Panda Forest's south entrance gate (`[0, 0, 16.4]`).
    - In `panda-forest`: Return gate `'gate-to-zoo-lobby'` is located at the south entrance gate `[0, 0, 16.4]` (trigger radius `3.0m`). Confirming `'Enter Zoo Lobby?'` transitions to `'zoo-lobby-1'` and spawns the player at `[0, 0.1, -11.2]` facing South (`0` rad), just inside the Zoo Lobby north archway.
 4. **Loading Screen on Zone Transition**: Confirming a gate sets a brief zone transition state (`transitioningToZoneName`) shown by `EntryLoadingScreen` while the room switch completes, automatically clearing once the target room's `welcome_snapshot` arrives (or immediately in offline mode).
+

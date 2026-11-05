@@ -1,3 +1,4 @@
+export * from './MainMenuScreen';
 export * from './EntryLoadingScreen';
 export * from './GameHudOverlay';
 export * from './TouchControlsOverlay';

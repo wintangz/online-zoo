@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useStore } from 'zustand';
 import { gameStore, getZoneById, PUBLIC_BETA_VERSION } from '@online-zoo/game-core';
 
@@ -6,20 +6,11 @@ export interface EntryLoadingScreenProps {
   onEnterWorld?: () => void;
 }
 
-export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterWorld }) => {
+export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = () => {
   const phase = useStore(gameStore, (s) => s.phase);
   const loadingProgress = useStore(gameStore, (s) => s.loadingProgress);
   const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
   const transitionTargetZone = useStore(gameStore, (s) => s.transitionTargetZone);
-  const identityProfile = useStore(gameStore, (s) => s.identity.profile);
-  const setPhase = useStore(gameStore, (s) => s.setPhase);
-  const openAvatarCustomizer = useStore(gameStore, (s) => s.openAvatarCustomizer);
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  useEffect(() => {
-    gameStore.getState().initializePlayerIdentity();
-    setIsHydrated(true);
-  }, []);
 
   if (transitionTargetZone) {
     const targetZone = getZoneById(transitionTargetZone);
@@ -44,26 +35,18 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
     );
   }
 
-  if (phase !== 'loading' && phase !== 'ready') {
+  if (phase !== 'loading') {
     return null;
   }
 
   const activeZone = getZoneById(currentZoneId);
-  const isReady = phase === 'ready' || loadingProgress >= 100;
-  const visibleDisplayName = isHydrated ? identityProfile.displayName : 'Explorer #101';
-
-  const handleEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.currentTarget.blur();
-    setPhase('playing');
-    onEnterWorld?.();
-  };
 
   return (
     <div
       data-testid="entry-loading-screen"
       className="fixed inset-0 z-50 flex select-none flex-col items-center justify-center bg-gradient-to-b from-emerald-950/95 via-emerald-900/90 to-teal-950/95 px-6 text-white backdrop-blur-md"
     >
-      <div className="w-full max-w-lg rounded-3xl border border-emerald-400/30 bg-emerald-950/80 p-8 text-center shadow-2xl">
+      <div className="w-full max-w-md rounded-3xl border border-emerald-400/30 bg-emerald-950/85 p-7 text-center shadow-2xl">
         <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
           <div className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500/20 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-300">
             <span data-testid="entry-zone-label">Online Zoo • {activeZone.displayName}</span>
@@ -76,18 +59,17 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
           </span>
         </div>
 
-        <h1 className="text-center text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-          Panda Forest Sanctuary
-        </h1>
-        <p className="mt-2 text-center text-sm leading-relaxed text-emerald-100/85">
-          Explore the misty highland bamboo grove, stroll along the Lotus Pond boardwalk, and
-          discover interactive habitat signs and garden props.
+        <h2 className="text-2xl font-extrabold tracking-tight text-white">
+          {activeZone.badgeIcon} Entering {activeZone.displayName}...
+        </h2>
+        <p className="mt-1.5 text-xs leading-relaxed text-emerald-100/80">
+          {activeZone.description}
         </p>
 
         {/* Loading Progress Bar */}
-        <div className="mt-6">
+        <div className="mt-5">
           <div className="mb-2 flex items-center justify-between text-xs font-medium text-emerald-200">
-            <span>{isReady ? 'World Assets Ready' : 'Loading 3D Environment...'}</span>
+            <span>Loading 3D Environment...</span>
             <span data-testid="loading-progress-value">{loadingProgress}%</span>
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-emerald-900/80 p-0.5">
@@ -97,51 +79,7 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
             />
           </div>
         </div>
-
-        {/* Quick Controls Summary */}
-        <div className="mt-6 grid grid-cols-1 gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-900/40 p-4 text-center text-xs text-emerald-100 sm:grid-cols-2">
-          <div className="flex flex-col items-center justify-center rounded-xl bg-emerald-950/40 p-2.5">
-            <p className="font-semibold text-emerald-300">Desktop Controls</p>
-            <p className="mt-1">WASD: Move • Shift: Run</p>
-            <p>Space: Jump • E: Interact</p>
-            <p>Mouse: Orbit • Hold Alt: Cursor</p>
-          </div>
-          <div className="flex flex-col items-center justify-center rounded-xl bg-emerald-950/40 p-2.5">
-            <p className="font-semibold text-emerald-300">Mobile Touch</p>
-            <p className="mt-1">Left Joystick: Walk Steer</p>
-            <p>Run Button: Sprint Toggle</p>
-            <p>Right Drag: 360° Camera</p>
-          </div>
-        </div>
-
-        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            data-testid="entry-customize-avatar-btn"
-            disabled={!isReady}
-            onClick={(e) => {
-              e.currentTarget.blur();
-              openAvatarCustomizer();
-            }}
-            className="flex items-center justify-center rounded-2xl border border-emerald-300/40 bg-emerald-900/70 px-5 py-3.5 text-center text-sm font-bold text-emerald-100 shadow transition hover:bg-emerald-800/80 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="leading-snug">Customize ({visibleDisplayName})</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="enter-world-btn"
-            disabled={!isReady}
-            onClick={handleEnter}
-            className="flex flex-1 items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 to-lime-400 px-6 py-3.5 text-center text-base font-bold text-emerald-950 shadow-lg transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="leading-snug">
-              {isReady ? `Enter ${activeZone.displayName}` : 'Preparing World...'}
-            </span>
-          </button>
-        </div>
       </div>
     </div>
   );
 };
-

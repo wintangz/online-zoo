@@ -13,3 +13,4 @@
 ## Decision 3: Paired Return Gate Arrival Spawn
 - **Decision**: When a player confirms a gate transition (`triggerZoneGateTransition(gateLink)`), the client stores `pendingGateArrival` (`{ zoneId, position, yaw }`) and `transitionTargetZone` in `gameStore`, switches to `gateLink.targetRoomId` via `multiplayerClient.switchInstance(gateLink.targetRoomId)`, and applies `arrivalPosition` + `arrivalYaw` to `characterController` and `mutableRuntimeState.avatar` when the room transition completes (and sends a `player_move` update so the server authority records the paired gate position).
 - **Rationale**: Ensures the player spawns directly at the paired return gate facing into the destination zone while keeping server authority synchronized.
+

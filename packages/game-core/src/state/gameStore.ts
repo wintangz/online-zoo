@@ -513,6 +513,7 @@ export interface GameUIStoreState {
   events: EventsStoreSlice;
   betaReadiness: BetaReadinessStoreSlice;
   isHudCompact: boolean;
+  isSettingsModalOpen: boolean;
   currentZoneId: WorldZoneId;
   transitionTargetZone: WorldZoneId | null;
   pendingGateArrival: {
@@ -524,6 +525,7 @@ export interface GameUIStoreState {
   setPhase: (phase: SessionPhase) => void;
   setHudCompact: (compact: boolean) => void;
   toggleHudCompact: () => void;
+  setSettingsModalOpen: (isOpen: boolean) => void;
   setCurrentZoneId: (zoneId: WorldZoneId) => void;
   setTransitionTargetZone: (zoneId: WorldZoneId | null) => void;
   setPendingGateArrival: (
@@ -779,12 +781,14 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   events: createInitialEventsSlice(),
   betaReadiness: createInitialBetaReadinessSlice(),
   isHudCompact: false,
+  isSettingsModalOpen: false,
   currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
   transitionTargetZone: null,
   pendingGateArrival: null,
 
   setHudCompact: (isHudCompact) => set({ isHudCompact }),
   toggleHudCompact: () => set((state) => ({ isHudCompact: !state.isHudCompact })),
+  setSettingsModalOpen: (isSettingsModalOpen) => set({ isSettingsModalOpen }),
   setCurrentZoneId: (currentZoneId) => set({ currentZoneId }),
   setTransitionTargetZone: (transitionTargetZone) => set({ transitionTargetZone }),
   setPendingGateArrival: (pendingGateArrival) => set({ pendingGateArrival }),
@@ -2745,6 +2749,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       events: createInitialEventsSlice(),
       betaReadiness: createInitialBetaReadinessSlice(),
       isHudCompact: false,
+      isSettingsModalOpen: false,
       currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
       transitionTargetZone: null,
       pendingGateArrival: null

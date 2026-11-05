@@ -4,19 +4,24 @@ import { gameStore, type QualityTier } from '@online-zoo/game-core';
 
 export const SettingsMenuModal: React.FC = () => {
   const phase = useStore(gameStore, (s) => s.phase);
+  const isSettingsModalOpen = useStore(gameStore, (s) => s.isSettingsModalOpen);
   const settings = useStore(gameStore, (s) => s.settings);
   const updateSettings = useStore(gameStore, (s) => s.updateSettings);
   const setPhase = useStore(gameStore, (s) => s.setPhase);
   const setCursorState = useStore(gameStore, (s) => s.setCursorState);
+  const setSettingsModalOpen = useStore(gameStore, (s) => s.setSettingsModalOpen);
 
-  if (phase !== 'paused') {
+  if (phase !== 'paused' && !isSettingsModalOpen) {
     return null;
   }
 
   const handleResume = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
-    setPhase('playing');
-    setCursorState(false, false);
+    setSettingsModalOpen(false);
+    if (phase === 'paused') {
+      setPhase('playing');
+      setCursorState(false, false);
+    }
   };
 
   return (

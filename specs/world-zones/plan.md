@@ -61,3 +61,4 @@ packages/ui/src/
 apps/server/src/
 └── zooInstanceAuthority.ts       # Zone-aware room layouts, 0 animals in zoo-lobby, friend zone info, occupancy zones
 ```
+

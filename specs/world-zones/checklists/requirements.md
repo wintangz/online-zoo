@@ -23,3 +23,4 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] Art style guide written first (`specs/world-zones/art-style-guide.md`)
 - [x] Specification is ready for `plan` and `tasks`
+

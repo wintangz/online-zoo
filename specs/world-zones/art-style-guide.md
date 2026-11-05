@@ -42,3 +42,4 @@ All materials and vertex colors must draw from this fixed 20-color palette:
 - **Zoo Lobby (`ZooLobbyScene.tsx`)**:
   - Welcoming entrance plaza (`[-24, 24]` X/Z bounds) with paved stone paths (`stonePath`), grassy borders (`meadowGrass`), ticket booths (`terracottaRoof`, `warmTimber`, `sunflowerGold`), a central Meeting Point compass fountain (`pondTeal`, `graniteSlate`, `coralAccent`), zone directory signage, benches, and the North Gate archway leading to `Panda Forest`.
   - Contains **no animals** so it remains lightweight and fast to load for every visitor.
+

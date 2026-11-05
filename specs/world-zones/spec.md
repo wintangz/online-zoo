@@ -78,3 +78,4 @@ Presence, proximity chat, and animal simulation remain scoped per room, while th
 - **SC-002**: Gate interactions in both `'zoo-lobby'` (`'Enter Panda Forest?'`) and `'panda-forest'` (`'Enter Zoo Lobby?'`) transition rooms, display the destination zone name on `EntryLoadingScreen`, and place the avatar at the paired return gate coordinates.
 - **SC-003**: `FriendStatusEntry` accurately reports `zoneId` and `zoneDisplayName` for online friends across zones.
 - **SC-004**: All unit, integration, and Playwright E2E tests pass with zero TypeScript or lint errors.
+

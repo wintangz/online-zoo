@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   DEFAULT_ENTRY_ROOM_ID,
   gameStore,
   getLayoutForRoomId,
-  InputController,
-  resolveZoneForRoomId,
-  ZOO_LOBBY_LAYOUT
+  InputController
 } from '@online-zoo/game-core';
 import {
   AnimalSimulationOverlay,
@@ -20,6 +18,8 @@ import {
   GameHudOverlay,
   InfoPlaqueModal,
   InteractionPromptBanner,
+  MainMenuScreen,
+  type MainMenuPlayPayload,
   SettingsMenuModal,
   SocialInteractionOverlay,
   TouchControlsOverlay,
@@ -50,28 +50,30 @@ function getExplicitRoomParam(): string | null {
 export const ZooWorldExperience: React.FC = () => {
   const inputController = useMemo(() => new InputController(), []);
   const explicitRoomId = useMemo(() => getExplicitRoomParam(), []);
-  const effectiveEntryRoomId = explicitRoomId ?? DEFAULT_ENTRY_ROOM_ID;
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+  const [activePlaySession, setActivePlaySession] = useState<MainMenuPlayPayload | null>(null);
+
   const initialSpawn = useMemo<[number, number, number]>(() => {
-    if (explicitRoomId) {
-      return [...getLayoutForRoomId(explicitRoomId).spawnPosition];
-    }
-    return [...ZOO_LOBBY_LAYOUT.spawnPosition];
-  }, [explicitRoomId]);
+    const roomId = activePlaySession?.roomId ?? DEFAULT_ENTRY_ROOM_ID;
+    return [...getLayoutForRoomId(roomId).spawnPosition];
+  }, [activePlaySession?.roomId]);
 
   const multiplayerOptions = useMemo(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    const roomId = activePlaySession?.roomId ?? DEFAULT_ENTRY_ROOM_ID;
     return {
       ...(wsUrl ? { url: wsUrl } : {}),
-      roomId: effectiveEntryRoomId,
-      alwaysSpawnInLobby: !explicitRoomId
+      roomId,
+      alwaysSpawnInLobby: roomId === DEFAULT_ENTRY_ROOM_ID
     };
-  }, [effectiveEntryRoomId, explicitRoomId]);
+  }, [activePlaySession?.roomId, wsUrl]);
 
-  useEffect(() => {
-    const entryZone = resolveZoneForRoomId(effectiveEntryRoomId);
-    gameStore.getState().setCurrentZoneId(entryZone.zoneId);
-    gameStore.getState().updateMultiplayerState({ roomId: effectiveEntryRoomId });
-  }, [effectiveEntryRoomId]);
+  const handlePlayFromMenu = (payload: MainMenuPlayPayload) => {
+    const st = gameStore.getState();
+    st.setCurrentZoneId(payload.zoneId);
+    st.updateMultiplayerState({ roomId: payload.roomId });
+    st.setPhase('loading');
+    setActivePlaySession(payload);
+  };
 
   return (
     <main
@@ -79,27 +81,44 @@ export const ZooWorldExperience: React.FC = () => {
       onContextMenu={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
     >
-      {/* 3D React Three Fiber + Rapier Runtime */}
-      <DynamicZooGameCanvas
-        initialSpawn={initialSpawn}
-        inputController={inputController}
-        multiplayerOptions={multiplayerOptions}
-      />
+      {!activePlaySession ? (
+        <>
+          <MainMenuScreen
+            {...(wsUrl ? { wsUrl } : {})}
+            sharedRoomParam={explicitRoomId}
+            onPlay={handlePlayFromMenu}
+          />
+          <SettingsMenuModal />
+          <AvatarCustomizerModal />
+        </>
+      ) : (
+        <>
+          {/* 3D React Three Fiber + Rapier Runtime (mounted only after clicking PLAY) */}
+          <DynamicZooGameCanvas
+            initialSpawn={initialSpawn}
+            inputController={inputController}
+            multiplayerOptions={multiplayerOptions}
+            onReady={() => {
+              gameStore.getState().setPhase('playing');
+            }}
+          />
 
-      {/* 2D React + Tailwind Overlays */}
-      <EntryLoadingScreen />
-      <GameHudOverlay />
-      <EventsAndActivitiesOverlay />
-      <ZooPassportOverlay />
-      <AnimalSimulationOverlay />
-      <FoodAndDiningOverlay />
-      <SocialInteractionOverlay />
-      <TouchControlsOverlay inputController={inputController} />
-      <InteractionPromptBanner inputController={inputController} />
-      <InfoPlaqueModal />
-      <SettingsMenuModal />
-      <AvatarCustomizerModal />
-      <BetaReadinessOverlay />
+          {/* 2D React + Tailwind Overlays */}
+          <EntryLoadingScreen />
+          <GameHudOverlay />
+          <EventsAndActivitiesOverlay />
+          <ZooPassportOverlay />
+          <AnimalSimulationOverlay />
+          <FoodAndDiningOverlay />
+          <SocialInteractionOverlay />
+          <TouchControlsOverlay inputController={inputController} />
+          <InteractionPromptBanner inputController={inputController} />
+          <InfoPlaqueModal />
+          <SettingsMenuModal />
+          <AvatarCustomizerModal />
+          <BetaReadinessOverlay />
+        </>
+      )}
     </main>
   );
 };

@@ -10,8 +10,9 @@ test.describe('Feature 002: Multiplayer Foundation (Multi-Session Sync & Recover
     const pageB = await contextB.newPage();
 
     try {
-      // 1. Enter Panda Forest in Session A (US1, FR-001..FR-004, SC-001)
+      // 1. Enter via Main Menu in Session A (US1, FR-001..FR-004, SC-001)
       await pageA.goto('/?room=e2e-multiplayer-room');
+      await expect(pageA.getByTestId('main-menu-screen')).toBeVisible();
       const enterBtnA = pageA.getByTestId('enter-world-btn');
       await expect(enterBtnA).toBeEnabled({ timeout: 10000 });
       await enterBtnA.click();
@@ -33,8 +34,9 @@ test.describe('Feature 002: Multiplayer Foundation (Multi-Session Sync & Recover
       });
       expect(sessionIdA).toBeTruthy();
 
-      // 2. Enter Panda Forest in Session B and verify mutual presence & non-overlapping spawn plaza offsets
+      // 2. Enter via Main Menu in Session B and verify mutual presence & non-overlapping spawn plaza offsets
       await pageB.goto('/?room=e2e-multiplayer-room');
+      await expect(pageB.getByTestId('main-menu-screen')).toBeVisible();
       const enterBtnB = pageB.getByTestId('enter-world-btn');
       await expect(enterBtnB).toBeEnabled({ timeout: 10000 });
       await enterBtnB.click();
