@@ -773,7 +773,7 @@ export class ZooInstanceAuthority {
     const radius = Math.min(2.2, 0.65 * Math.sqrt(normalizedSlot));
     const angle = normalizedSlot * GOLDEN_ANGLE_RAD;
     const candidateX = Number((base[0] + Math.cos(angle) * radius).toFixed(3));
-    const candidateZ = Number((base[2] + Math.sin(angle) * radius).toFixed(3));
+    const candidateZ = Number((base[2] + Math.abs(Math.sin(angle)) * radius).toFixed(3));
 
     const resolved = resolveHorizontalWorldCollisions(
       [candidateX, base[1], candidateZ],

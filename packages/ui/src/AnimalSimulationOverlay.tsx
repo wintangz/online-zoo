@@ -38,8 +38,10 @@ export const AnimalSimulationOverlay: React.FC = () => {
   const setEncyclopediaOpen = useStore(gameStore, (s) => s.setEncyclopediaOpen);
   const clearDiscoveryToast = useStore(gameStore, (s) => s.clearDiscoveryToast);
   const setFeedingNotice = useStore(gameStore, (s) => s.setFeedingNotice);
+  const isHudCompact = useStore(gameStore, (s) => s.isHudCompact);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [stripCollapsed, setStripCollapsed] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -92,44 +94,52 @@ export const AnimalSimulationOverlay: React.FC = () => {
 
   return (
     <>
-      {/* Live Habitat Animal Status Strip (allows quick observation & inspection on desktop and mobile) */}
-      <div
-        data-testid="animal-status-strip"
-        className="pointer-events-auto fixed left-4 top-44 z-20 flex max-w-[92vw] flex-wrap items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md sm:left-6"
-      >
-        <span className="mr-1 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-          Habitats:
-        </span>
-        {animals.map((animal) => {
-          const cat = ANIMAL_SPECIES_CATALOG[animal.speciesId];
-          const isSelected = inspectedAnimalId === animal.animalId;
-          return (
-            <button
-              key={animal.animalId}
-              type="button"
-              data-testid={`animal-badge-${animal.animalId}`}
-              onClick={(e) => {
-                e.currentTarget.blur();
-                inspectAnimal(animal.animalId);
-              }}
-              className={`inline-flex items-center gap-1 rounded-xl border px-2 py-0.5 text-[11px] font-semibold transition ${
-                isSelected
-                  ? 'border-emerald-300 bg-emerald-500/30 text-white'
-                  : 'border-white/15 bg-white/10 text-slate-100 hover:bg-white/20'
-              }`}
-            >
-              <span>{cat.badgeIcon}</span>
-              <span>{animal.displayName}</span>
-              <span
-                data-testid={`animal-state-${animal.animalId}`}
-                className="rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-bold text-emerald-300"
-              >
-                {animal.behaviorState}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Compact Habitat Animal Status Strip (docked neatly under top-left status bar) */}
+      {!isHudCompact && (
+        <div
+          data-testid="animal-status-strip"
+          className="pointer-events-auto fixed left-3 top-[5.5rem] z-20 flex max-w-[60vw] flex-wrap items-center gap-1 rounded-xl border border-white/15 bg-emerald-950/70 px-2 py-1 text-[10px] text-white shadow-md backdrop-blur-md sm:left-4"
+        >
+          <button
+            type="button"
+            data-testid="toggle-animal-strip-btn"
+            onClick={() => setStripCollapsed((prev) => !prev)}
+            className="mr-0.5 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 hover:bg-white/20"
+          >
+            Habitats {stripCollapsed ? '▸' : '▾'}
+          </button>
+          {!stripCollapsed &&
+            animals.map((animal) => {
+              const cat = ANIMAL_SPECIES_CATALOG[animal.speciesId];
+              const isSelected = inspectedAnimalId === animal.animalId;
+              return (
+                <button
+                  key={animal.animalId}
+                  type="button"
+                  data-testid={`animal-badge-${animal.animalId}`}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    inspectAnimal(animal.animalId);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold leading-none transition ${
+                    isSelected
+                      ? 'border-emerald-300 bg-emerald-500/30 text-white'
+                      : 'border-white/10 bg-white/10 text-slate-100 hover:bg-white/20'
+                  }`}
+                >
+                  <span>{cat.badgeIcon}</span>
+                  <span>{animal.displayName}</span>
+                  <span
+                    data-testid={`animal-state-${animal.animalId}`}
+                    className="rounded bg-black/35 px-1 py-0.5 text-[9px] font-bold leading-none text-emerald-300"
+                  >
+                    {animal.behaviorState}
+                  </span>
+                </button>
+              );
+            })}
+        </div>
+      )}
 
       {/* Discovery Notification Toast (FR-009, US4) */}
       {discoveryToast && (

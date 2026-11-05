@@ -27,8 +27,10 @@ export const SocialInteractionOverlay: React.FC = () => {
   const openReportModal = useStore(gameStore, (s) => s.openReportModal);
   const closeReportModal = useStore(gameStore, (s) => s.closeReportModal);
   const setSocialNotice = useStore(gameStore, (s) => s.setSocialNotice);
+  const isHudCompact = useStore(gameStore, (s) => s.isHudCompact);
 
   const [chatDraft, setChatDraft] = useState('');
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [friendTargetInput, setFriendTargetInput] = useState('');
   const [customInstanceInput, setCustomInstanceInput] = useState('');
   const [tuneIdInput, setTuneIdInput] = useState('');
@@ -222,15 +224,15 @@ export const SocialInteractionOverlay: React.FC = () => {
 
   return (
     <>
-      {/* Bottom-Left Proximity Chat & Emote Picker Bar (FR-001 - FR-011) */}
+      {/* Bottom-Left Compact Proximity Chat & Emote Picker Bar (FR-001 - FR-011) */}
       <div
         data-ui-interactive="true"
-        className="pointer-events-none fixed bottom-4 left-4 z-30 flex w-80 max-w-[calc(100vw-2rem)] select-none flex-col gap-2 sm:bottom-6 sm:left-6 sm:w-96"
+        className="pointer-events-none fixed bottom-3 left-3 z-20 flex w-64 max-w-[calc(100vw-1.5rem)] select-none flex-col gap-1.5 sm:bottom-4 sm:left-4 sm:w-72"
       >
         {/* 5-Emote Quick Bar (FR-009) */}
         <div
           data-testid="emote-picker-bar"
-          className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-2xl border border-white/20 bg-emerald-950/85 p-2 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded-xl border border-white/15 bg-emerald-950/80 p-1.5 shadow-md backdrop-blur-md"
         >
           {EMOTE_CATALOG.map((emote) => {
             const isActive = social.localActiveEmote?.emoteId === emote.id;
@@ -243,7 +245,7 @@ export const SocialInteractionOverlay: React.FC = () => {
                   e.currentTarget.blur();
                   handleTriggerEmote(emote.id);
                 }}
-                className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border px-2.5 py-1.5 text-center text-xs font-bold leading-none transition active:scale-95 ${
+                className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1 text-center text-[11px] font-bold leading-none transition active:scale-95 ${
                   isActive
                     ? 'border-amber-300 bg-amber-400 text-emerald-950 shadow'
                     : 'border-white/15 bg-white/10 text-emerald-100 hover:bg-white/20'
@@ -256,80 +258,87 @@ export const SocialInteractionOverlay: React.FC = () => {
           })}
         </div>
 
-        {/* Proximity Chat Panel (FR-001 - FR-008) */}
+        {/* Compact Proximity Chat Panel (FR-001 - FR-008) */}
         <div
           data-testid="proximity-chat-panel"
-          className="pointer-events-auto flex flex-col rounded-2xl border border-white/20 bg-emerald-950/85 p-3 text-white shadow-xl backdrop-blur-md"
+          className="pointer-events-auto flex flex-col rounded-xl border border-white/15 bg-emerald-950/80 p-2 text-white shadow-lg backdrop-blur-md"
         >
-          <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-              Proximity Chat (24m)
-            </span>
-            <span className="text-[11px] font-medium text-emerald-200/80">
+          <div className="mb-1 flex items-center justify-between border-b border-white/10 pb-1">
+            <button
+              type="button"
+              data-testid="toggle-chat-compact-btn"
+              onClick={() => setChatCollapsed((prev) => !prev)}
+              className="text-left text-[10px] font-bold uppercase tracking-wider text-emerald-300 hover:text-emerald-200"
+            >
+              Proximity Chat (24m) {chatCollapsed || isHudCompact ? '▸' : '▾'}
+            </button>
+            <span className="text-[10px] font-medium text-emerald-200/80">
               {social.chatMessages.length} msgs
             </span>
           </div>
 
-          <div
-            data-testid="chat-message-list"
-            className="mb-2 flex max-h-32 min-h-[3.5rem] flex-col gap-1.5 overflow-y-auto pr-1 text-xs"
-          >
-            {social.chatMessages.length === 0 ? (
-              <p className="my-auto text-center text-[11px] italic text-emerald-300/70">
-                Say hello to visitors nearby! Messages appear as speech bubbles within 24m.
-              </p>
-            ) : (
-              social.chatMessages.map((msg) => {
-                const isSelf = multiplayer.localSessionId
-                  ? msg.senderSessionId === multiplayer.localSessionId
-                  : msg.senderPlayerId === identityProfile.playerId;
-                return (
-                  <div
-                    key={msg.messageId}
-                    data-testid="chat-message-item"
-                    data-sender-player-id={msg.senderPlayerId}
-                    className="flex items-start justify-between gap-2 rounded-lg bg-white/5 px-2 py-1"
-                  >
-                    <div className="min-w-0 flex-1 break-words leading-snug">
-                      <span
-                        className="mr-1.5 font-bold"
-                        style={{ color: msg.senderAccentColor || '#6ee7b7' }}
-                      >
-                        {msg.senderDisplayName}:
-                      </span>
-                      <span className="text-emerald-50">{msg.text}</span>
-                    </div>
-                    {!isSelf && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          title="Mute speaker"
-                          onClick={() => toggleMutePlayer(msg.senderPlayerId)}
-                          className="inline-flex items-center justify-center rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-200 hover:bg-white/20"
+          {!chatCollapsed && !isHudCompact && (
+            <div
+              data-testid="chat-message-list"
+              className="mb-1.5 flex max-h-20 min-h-[1.75rem] flex-col gap-1 overflow-y-auto pr-1 text-[11px]"
+            >
+              {social.chatMessages.length === 0 ? (
+                <p className="my-auto text-center text-[10px] italic text-emerald-300/70">
+                  Say hello to nearby visitors (24m)
+                </p>
+              ) : (
+                social.chatMessages.map((msg) => {
+                  const isSelf = multiplayer.localSessionId
+                    ? msg.senderSessionId === multiplayer.localSessionId
+                    : msg.senderPlayerId === identityProfile.playerId;
+                  return (
+                    <div
+                      key={msg.messageId}
+                      data-testid="chat-message-item"
+                      data-sender-player-id={msg.senderPlayerId}
+                      className="flex items-start justify-between gap-1.5 rounded bg-white/5 px-1.5 py-0.5"
+                    >
+                      <div className="min-w-0 flex-1 break-words leading-snug">
+                        <span
+                          className="mr-1 font-bold"
+                          style={{ color: msg.senderAccentColor || '#6ee7b7' }}
                         >
-                          Mute
-                        </button>
-                        <button
-                          type="button"
-                          title="Report speaker"
-                          onClick={() =>
-                            openReportModal({
-                              playerId: msg.senderPlayerId,
-                              sessionId: msg.senderSessionId,
-                              displayName: msg.senderDisplayName
-                            })
-                          }
-                          className="inline-flex items-center justify-center rounded bg-rose-500/25 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-rose-200 hover:bg-rose-500/40"
-                        >
-                          Report
-                        </button>
+                          {msg.senderDisplayName}:
+                        </span>
+                        <span className="text-emerald-50">{msg.text}</span>
                       </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+                      {!isSelf && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            title="Mute speaker"
+                            onClick={() => toggleMutePlayer(msg.senderPlayerId)}
+                            className="inline-flex items-center justify-center rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold leading-none text-amber-200 hover:bg-white/20"
+                          >
+                            Mute
+                          </button>
+                          <button
+                            type="button"
+                            title="Report speaker"
+                            onClick={() =>
+                              openReportModal({
+                                playerId: msg.senderPlayerId,
+                                sessionId: msg.senderSessionId,
+                                displayName: msg.senderDisplayName
+                              })
+                            }
+                            className="inline-flex items-center justify-center rounded bg-rose-500/25 px-1 py-0.5 text-[9px] font-semibold leading-none text-rose-200 hover:bg-rose-500/40"
+                          >
+                            Report
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
 
           {social.chatFeedback && (
             <div

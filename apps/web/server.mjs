@@ -164,7 +164,7 @@ const VALID_PASSPORT_ZONE_IDS = [
 
 /** @type {Array<{ zoneId: string; center: [number, number, number]; radiusMeters: number }>} */
 const SERVER_PASSPORT_ZONES = [
-  { zoneId: 'zone-welcome-plaza', center: [-5.2, 0, 12.6], radiusMeters: 4.2 },
+  { zoneId: 'zone-welcome-plaza', center: [-2.6, 0, 12.6], radiusMeters: 3.6 },
   { zoneId: 'zone-panda-sanctuary', center: [8.4, 0, 9.2], radiusMeters: 6.0 },
   { zoneId: 'zone-penguin-cove', center: [-8.6, 0, 7.0], radiusMeters: 6.0 },
   { zoneId: 'zone-lotus-stream', center: [-2.0, 0, -2.5], radiusMeters: 6.0 },
@@ -538,8 +538,8 @@ const PANDA_FOREST_OBSTACLES = [
   { id: 'bamboo-06', position: [-12.0, 0, -12.0], radius: 1.2 },
   { id: 'bamboo-07', position: [2.5, 0, -19.5], radius: 1.3 },
   { id: 'bamboo-08', position: [-4.5, 0, -19.5], radius: 1.3 },
-  { id: 'gate-pillar-west', position: [-2.6, 0, 22.5], radius: 0.45 },
-  { id: 'gate-pillar-east', position: [2.6, 0, 22.5], radius: 0.45 },
+  { id: 'gate-pillar-west', position: [-2.1, 0, 16.4], radius: 0.45 },
+  { id: 'gate-pillar-east', position: [2.1, 0, 16.4], radius: 0.45 },
   { id: 'collider-plaque-panda-habitat', position: [2.8, 0, 11.5], radius: 0.55 },
   { id: 'collider-plaque-pond-ecology', position: [-1.2, 0, -3.5], radius: 0.55 },
   { id: 'collider-prop-stone-lantern', position: [4.2, 0, 1.5], radius: 0.55 },
@@ -796,7 +796,7 @@ function computeSpawnPosition(spawnIndex) {
   const radius = Math.min(2.2, 0.65 * Math.sqrt(slot));
   const angle = slot * 2.399963229728653;
   const cx = Number((base[0] + Math.cos(angle) * radius).toFixed(3));
-  const cz = Number((base[2] + Math.sin(angle) * radius).toFixed(3));
+  const cz = Number((base[2] + Math.abs(Math.sin(angle)) * radius).toFixed(3));
   const resolved = resolveHorizontalWorldCollisions([cx, base[1], cz]);
   return [
     Number(resolved.position[0].toFixed(3)),

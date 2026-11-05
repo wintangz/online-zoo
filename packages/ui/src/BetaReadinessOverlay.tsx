@@ -136,49 +136,42 @@ export const BetaReadinessOverlay: React.FC = () => {
 
   return (
     <>
-      {/* Non-blocking Floating Welcome & Onboarding Guide Card (FR-001, FR-002, SC-001) */}
+      {/* Non-blocking Compact Welcome & Arrival Guide Card (FR-001, FR-002, SC-001) */}
       {showOnboardingCard && (
         <aside
           data-testid="onboarding-guide-modal"
           aria-label="Welcome & Controls Guide"
-          className="pointer-events-auto fixed bottom-4 left-4 z-30 w-full max-w-md rounded-3xl border border-emerald-300/45 bg-emerald-950/95 p-5 text-white shadow-2xl backdrop-blur-md sm:bottom-6 sm:left-6"
+          className="pointer-events-auto fixed left-3 top-[8.25rem] z-20 w-full max-w-xs rounded-2xl border border-emerald-300/40 bg-emerald-950/90 p-3 text-white shadow-xl backdrop-blur-md sm:left-4"
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-2">
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-200">
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-400/20 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-200">
                 <span>✨ Public Beta (v{PUBLIC_BETA_VERSION})</span>
               </span>
-              <h2 className="mt-1.5 text-lg font-extrabold tracking-tight text-white">
+              <h2 className="mt-1 text-sm font-extrabold tracking-tight text-white">
                 Welcome to Panda Forest Sanctuary!
               </h2>
-              <p className="mt-0.5 text-xs text-emerald-100/90">
-                Stroll with friends, observe pandas, penguins &amp; otters, collect Zoo Passport
-                stamps, and join live sanctuary activities.
+              <p className="mt-0.5 text-[11px] leading-snug text-emerald-100/90">
+                You are outside the <strong>Sanctuary Gate</strong> — press{' '}
+                <strong className="text-amber-200">W / ↑</strong> to walk forward through the gate
+                into the Welcome Plaza!
               </p>
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
             {ONBOARDING_CONTROL_TIPS.slice(0, 4).map((tip) => (
               <div
                 key={tip.id}
-                className="rounded-2xl border border-emerald-500/25 bg-emerald-900/50 p-2.5 text-xs"
+                className="rounded-xl border border-emerald-500/20 bg-emerald-900/45 p-1.5 text-[10px]"
               >
                 <p className="font-bold text-emerald-200">{tip.actionLabel}</p>
-                <p className="mt-0.5 font-semibold text-amber-200">{tip.keysOrGesture}</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-emerald-100/85">
-                  {tip.description}
-                </p>
+                <p className="font-semibold text-amber-200">{tip.keysOrGesture}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-950/35 px-3 py-2 text-[11px] text-amber-100/90">
-            <span className="font-bold text-amber-300">Beta Note:</span> First-release sanctuary
-            features 3 species &amp; up to 16 visitors per instance with automatic overflow rooms.
-          </div>
-
-          <div className="mt-3.5 flex flex-wrap items-center justify-end gap-2">
+          <div className="mt-2.5 flex items-center justify-end gap-1.5">
             <button
               type="button"
               data-testid="onboarding-open-help-btn"
@@ -186,17 +179,17 @@ export const BetaReadinessOverlay: React.FC = () => {
                 completeOnboarding();
                 setHelpCenterOpen(true, 'controls');
               }}
-              className="rounded-xl border border-emerald-300/35 bg-emerald-900/75 px-3 py-2 text-xs font-bold text-emerald-100 transition hover:bg-emerald-800"
+              className="rounded-lg border border-emerald-300/35 bg-emerald-900/75 px-2.5 py-1 text-[11px] font-bold text-emerald-100 transition hover:bg-emerald-800"
             >
-              Full Guide &amp; Beta Info
+              Full Guide
             </button>
             <button
               type="button"
               data-testid="dismiss-onboarding-btn"
               onClick={() => completeOnboarding()}
-              className="rounded-xl bg-gradient-to-r from-emerald-400 to-lime-400 px-4 py-2 text-xs font-extrabold text-emerald-950 shadow transition hover:brightness-105"
+              className="rounded-lg bg-gradient-to-r from-emerald-400 to-lime-400 px-3 py-1 text-[11px] font-extrabold text-emerald-950 shadow transition hover:brightness-105"
             >
-              Got It, Let&apos;s Explore!
+              Got It!
             </button>
           </div>
         </aside>

@@ -2,15 +2,15 @@ import React, { useMemo } from 'react';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 
 export const TerrainAndPaths: React.FC = () => {
-  // Stepping stones along the main pathway from spawn (Z = 18) to northern overlook (Z = -18)
+  // Stepping stones along the main pathway from South Arrival Terrace (Z = 20.6) through Entrance Gate (Z = 16.4) to northern overlook (Z = -18)
   const steppingStones = useMemo(() => {
     const stones: Array<{ pos: [number, number, number]; scale: [number, number, number]; rotY: number }> = [];
-    for (let z = 19; z >= -18; z -= 1.8) {
-      const curveX = Math.sin(z * 0.14) * 1.4;
+    for (let z = 20.6; z >= -18; z -= 1.6) {
+      const curveX = z >= 15.0 ? 0 : Math.sin((z - 15.0) * 0.14) * 1.4;
       stones.push({
         pos: [curveX, 0.03, z],
         scale: [2.4, 0.06, 1.3],
-        rotY: Math.cos(z * 0.14) * 0.15
+        rotY: z >= 15.0 ? 0 : Math.cos((z - 15.0) * 0.14) * 0.15
       });
     }
     // Branch path toward the Lotus Pond boardwalk
@@ -51,8 +51,8 @@ export const TerrainAndPaths: React.FC = () => {
         <meshStandardMaterial color="#5dae66" roughness={0.9} metalness={0.02} />
       </mesh>
 
-      {/* Spawn Plaza Terrace */}
-      <mesh receiveShadow position={[0, 0.02, 18]}>
+      {/* South Arrival Terrace (Outside Entrance Gate at Z = 18.6) */}
+      <mesh receiveShadow position={[0, 0.02, 18.6]}>
         <cylinderGeometry args={[3.4, 3.6, 0.05, 32]} />
         <meshStandardMaterial color="#c9bfa8" roughness={0.85} />
       </mesh>

@@ -72,8 +72,8 @@ export const PASSPORT_ZONES_CATALOG: readonly PassportZoneDescriptor[] = [
     stampLabel: 'WELCOME PLAZA • SANCTUARY GATE',
     stampIcon: '⛩️',
     accentColor: '#f59e0b',
-    center: [-5.2, 0, 12.6],
-    radius: 4.2
+    center: [-2.6, 0, 12.6],
+    radius: 3.6
   },
   {
     zoneId: 'zone-panda-sanctuary',

@@ -504,8 +504,11 @@ export interface GameUIStoreState {
   passport: PassportStoreSlice;
   events: EventsStoreSlice;
   betaReadiness: BetaReadinessStoreSlice;
+  isHudCompact: boolean;
 
   setPhase: (phase: SessionPhase) => void;
+  setHudCompact: (compact: boolean) => void;
+  toggleHudCompact: () => void;
   setLoadingProgress: (progress: number) => void;
   setLocomotionState: (state: LocomotionState) => void;
   setActiveDevice: (device: InputDeviceMode) => void;
@@ -749,7 +752,10 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   passport: createInitialPassportSlice(),
   events: createInitialEventsSlice(),
   betaReadiness: createInitialBetaReadinessSlice(),
+  isHudCompact: false,
 
+  setHudCompact: (isHudCompact) => set({ isHudCompact }),
+  toggleHudCompact: () => set((state) => ({ isHudCompact: !state.isHudCompact })),
   setPhase: (phase) =>
     set((state) => ({
       phase,
@@ -2702,7 +2708,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       dining: createInitialDiningSlice(),
       passport: createInitialPassportSlice(),
       events: createInitialEventsSlice(),
-      betaReadiness: createInitialBetaReadinessSlice()
+      betaReadiness: createInitialBetaReadinessSlice(),
+      isHudCompact: false
     });
   }
 }));

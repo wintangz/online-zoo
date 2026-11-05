@@ -61,28 +61,91 @@ export const PerimeterEnclosure: React.FC = () => {
         </group>
       ))}
 
-      {/* Decorative Panda Sanctuary Entrance Arch near South Spawn with Solid Pillar Colliders */}
-      <group position={[0, 0, 22.5]}>
+      {/* Sanctuary Entrance Gate Archway in front of South Arrival Terrace (Z = 16.4) */}
+      <group
+        name="sanctuary-entrance-gate"
+        position={PANDA_FOREST_LAYOUT.entranceGatePosition}
+      >
         <RigidBody type="fixed" colliders={false} name="entrance-arch-colliders">
-          <CylinderCollider args={[2.2, 0.45]} position={[-2.6, 2.2, 0]} />
-          <CylinderCollider args={[2.2, 0.45]} position={[2.6, 2.2, 0]} />
+          <CylinderCollider args={[2.2, 0.45]} position={[-2.1, 2.2, 0]} />
+          <CylinderCollider args={[2.2, 0.45]} position={[2.1, 2.2, 0]} />
         </RigidBody>
-        <mesh castShadow position={[-2.6, 2.2, 0]}>
+
+        {/* Stone Plinth Bases */}
+        <mesh castShadow receiveShadow position={[-2.1, 0.28, 0]}>
+          <cylinderGeometry args={[0.42, 0.48, 0.56, 16]} />
+          <meshStandardMaterial color="#7c8288" roughness={0.85} />
+        </mesh>
+        <mesh castShadow receiveShadow position={[2.1, 0.28, 0]}>
+          <cylinderGeometry args={[0.42, 0.48, 0.56, 16]} />
+          <meshStandardMaterial color="#7c8288" roughness={0.85} />
+        </mesh>
+
+        {/* Main Crimson Sanctuary Gate Pillars */}
+        <mesh castShadow position={[-2.1, 2.2, 0]}>
           <cylinderGeometry args={[0.25, 0.3, 4.4, 16]} />
-          <meshStandardMaterial color="#8f322a" roughness={0.7} />
+          <meshStandardMaterial color="#8f322a" roughness={0.68} />
         </mesh>
-        <mesh castShadow position={[2.6, 2.2, 0]}>
+        <mesh castShadow position={[2.1, 2.2, 0]}>
           <cylinderGeometry args={[0.25, 0.3, 4.4, 16]} />
+          <meshStandardMaterial color="#8f322a" roughness={0.68} />
+        </mesh>
+
+        {/* Tiered Jade Roof & Crimson Crossbeams */}
+        <mesh castShadow position={[0, 4.35, 0]}>
+          <boxGeometry args={[6.2, 0.45, 0.85]} />
+          <meshStandardMaterial color="#2a5c3b" roughness={0.62} />
+        </mesh>
+        <mesh castShadow position={[0, 3.72, 0]}>
+          <boxGeometry args={[5.2, 0.28, 0.48]} />
           <meshStandardMaterial color="#8f322a" roughness={0.7} />
         </mesh>
-        <mesh castShadow position={[0, 4.3, 0]}>
-          <boxGeometry args={[6.8, 0.45, 0.7]} />
-          <meshStandardMaterial color="#2a5c3b" roughness={0.65} />
+
+        {/* Gold-Trimmed Overhead Gate Signboard */}
+        <mesh castShadow position={[0, 4.02, 0.32]}>
+          <boxGeometry args={[2.6, 0.42, 0.12]} />
+          <meshStandardMaterial color="#d97706" roughness={0.45} metalness={0.25} />
         </mesh>
-        <mesh castShadow position={[0, 3.7, 0]}>
-          <boxGeometry args={[5.8, 0.28, 0.45]} />
-          <meshStandardMaterial color="#8f322a" roughness={0.7} />
+
+        {/* Warm Hanging Welcome Lanterns */}
+        <mesh position={[-2.55, 3.35, 0.2]}>
+          <sphereGeometry args={[0.22, 14, 14]} />
+          <meshStandardMaterial
+            color="#fef08a"
+            emissive="#f59e0b"
+            emissiveIntensity={0.85}
+          />
         </mesh>
+        <mesh position={[2.55, 3.35, 0.2]}>
+          <sphereGeometry args={[0.22, 14, 14]} />
+          <meshStandardMaterial
+            color="#fef08a"
+            emissive="#f59e0b"
+            emissiveIntensity={0.85}
+          />
+        </mesh>
+
+        {/* Low Flanking Bamboo-and-Stone Courtyard Entry Wings (visual threshold framing) */}
+        <group position={[-3.75, 0, 0]}>
+          <mesh castShadow receiveShadow position={[0, 0.35, 0]}>
+            <boxGeometry args={[2.6, 0.7, 0.4]} />
+            <meshStandardMaterial color="#7c8288" roughness={0.88} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, 0.9, 0]}>
+            <boxGeometry args={[2.4, 0.45, 0.18]} />
+            <meshStandardMaterial color="#589c48" roughness={0.75} />
+          </mesh>
+        </group>
+        <group position={[3.75, 0, 0]}>
+          <mesh castShadow receiveShadow position={[0, 0.35, 0]}>
+            <boxGeometry args={[2.6, 0.7, 0.4]} />
+            <meshStandardMaterial color="#7c8288" roughness={0.88} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, 0.9, 0]}>
+            <boxGeometry args={[2.4, 0.45, 0.18]} />
+            <meshStandardMaterial color="#589c48" roughness={0.75} />
+          </mesh>
+        </group>
       </group>
     </group>
   );

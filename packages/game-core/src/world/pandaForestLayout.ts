@@ -8,6 +8,8 @@ export interface PandaForestLayoutConfig {
   /** Spawn Transform: Position [0, 0.1, 18], initial facing yaw 0 */
   spawnPosition: [number, number, number];
   spawnYaw: number;
+  /** Sanctuary Entrance Gate Archway position [0, 0, 16.4] in front of South Arrival Terrace */
+  entranceGatePosition: [number, number, number];
   /** Playable zone bounds ([-40, 40] X/Z, y >= 0) */
   worldBounds: {
     minX: number;
@@ -290,9 +292,9 @@ export const PANDA_FOREST_OBSTACLES: SolidObstacleCollider[] = [
   { id: 'bamboo-07', kind: 'bamboo', position: [2.5, 0, -19.5], radius: 1.3, height: 8.2, scale: 1.2 },
   { id: 'bamboo-08', kind: 'bamboo', position: [-4.5, 0, -19.5], radius: 1.3, height: 8.0, scale: 1.15 },
 
-  // Entrance Sanctuary Arch Pillars (South Gate at Z = 22.5)
-  { id: 'gate-pillar-west', kind: 'pillar', position: [-2.6, 0, 22.5], radius: 0.45, height: 4.4 },
-  { id: 'gate-pillar-east', kind: 'pillar', position: [2.6, 0, 22.5], radius: 0.45, height: 4.4 },
+  // Entrance Sanctuary Arch Pillars (South Gate at Z = 16.4, in front of South Arrival Terrace at Z = 18)
+  { id: 'gate-pillar-west', kind: 'pillar', position: [-2.1, 0, 16.4], radius: 0.45, height: 4.4 },
+  { id: 'gate-pillar-east', kind: 'pillar', position: [2.1, 0, 16.4], radius: 0.45, height: 4.4 },
 
   // Solid World Props, Habitat Plaques, Ecology Signs, Lantern, Chime Pavilion & Benches (FR-023, FR-012)
   { id: 'collider-plaque-panda-habitat', kind: 'pillar', position: [2.8, 0, 11.5], radius: 0.55, height: 2.0 },
@@ -333,6 +335,7 @@ export function createInitialRoomSeatStates(
 export const PANDA_FOREST_LAYOUT: PandaForestLayoutConfig = {
   spawnPosition: [0, 0.1, 18],
   spawnYaw: 0,
+  entranceGatePosition: [0, 0, 16.4],
   worldBounds: {
     minX: -40,
     maxX: 40,
