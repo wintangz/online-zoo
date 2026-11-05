@@ -111,3 +111,31 @@
   - Logged in `specs/hud-declutter/ASSUMPTIONS.md`: retained `isHudCompact` defaulting to `false` for backward compatibility with unit tests while introducing `isDevDebugOpen` (default `false`) for diagnostic/debug badges and `isChatPanelOpen` (default `false`) for the dock-opened Chat & Emotes panel.
 - **Anything to Review**:
   - None; zero server or protocol changes were made, and all unit and E2E checks are green.
+
+
+## `asset-pipeline` — `72e78cf`
+
+- **Slug**: `asset-pipeline`
+- **Branch**: `fix/asset-pipeline`
+- **Commit Hash**: `72e78cf`
+- **What Changed**:
+  - Updated `packages/game-assets/scripts/generate-glb-assets.mjs` and `packages/game-assets/src/manifest.ts` to **Manifest v2** (`MANIFEST_VERSION = 2`): every generated `.glb` file is emitted with an 8-character SHA-256 content hash in its filename (`/assets/models/<id>.<contentHash>.glb`), stale/unhashed `.glb` files are removed automatically, and every `ASSET_MANIFEST` entry declares `zoneId`, `zones`, `sizeBytes`, and `contentHash`.
+  - Updated `packages/game-assets/src/loaders.ts` with session-cached per-zone asset preloading (`preloadZoneAssets(zoneId, preloader?)`, `isZoneLoaded(zoneId)`, `getLoadedZones()`, `getPreloadedAssetUrls()`, `getZoneTransferBytes(zoneId)`, `resetZonePreloadCache()`).
+  - Removed the global top-level `for (const url of getPreloadUrls()) { useGLTF.preload(url); }` loop from `packages/game-client/src/runtime/ZooGameCanvas.tsx` and added `preloadZoneGlbAssets(zoneId)` wired into `apps/web/src/components/ZooWorldExperience.tsx` (preloading **only** `'zoo-lobby'` assets at Main Menu time), `ZooGameCanvas.tsx`, and `GameLoopController.tsx` (preloading a destination zone's assets when its gate is used behind the loading screen while keeping visited zones cached in memory for the session).
+  - Updated `apps/web/next.config.mjs` with `headers()` serving `/assets/:path*` with `Cache-Control: public, max-age=31536000, immutable` while pages/JS keep normal Next.js revalidation.
+  - Added automated Manifest v2 + disk verification tests in `packages/game-assets/__tests__/manifest.test.ts` verifying that every manifest URL exists in `apps/web/public`, `fs.statSync(fullPath).size === entry.sizeBytes`, the SHA-256 prefix matches `entry.contentHash`, no orphan `.glb` files remain, and per-zone loading caches visited zones in memory; also added E2E assertions in `apps/web/e2e/playable-zoo-world.spec.ts` verifying `getLoadedZones()` is `['zoo-lobby']` before using the gate and `['zoo-lobby', 'panda-forest']` after crossing into Panda Forest.
+  - Wrote `ASSETS.md` at the repository root documenting where assets live, the Manifest v2 schema, how to add a new 3D model (export/builder step, manifest entry, palette check from `art-style-unification`), per-zone loading, and what a returning player re-downloads (`0 bytes` for unchanged 3D models).
+- **Measured First-Visit Transfer Budget (Menu + Lobby Playable)**:
+  - **Lobby 3D Models (`zoo-lobby` 6 `.glb` files)**: `30,488 bytes` (**29.8 KB** total across `avatar-explorer`, `prop-stone-lantern`, `prop-habitat-plaque`, `prop-wooden-bench`, `prop-ticket-booth`, `prop-fountain`; the 8 `panda-forest`-exclusive `.glb` files totaling `62,552 bytes` are deferred until the gate is used).
+  - **Next.js Route `/` First Load JS (gzipped)**: **166 KB** (`78.5 KB` page + `87.4 KB` shared chunks).
+  - **Total Uncompressed `.next/static` (all client JS + CSS + Rapier WASM chunks) + 6 Lobby `.glb` Models**: `4,157,892 bytes` (**3.97 MB** uncompressed, ~**1.1 MB** over the wire with gzip/brotli) — well within the **≤ ~5 MB** first-visit transfer budget.
+- **Check Results**:
+  - `pnpm typecheck`: **PASS** (12/12 tasks green)
+  - `pnpm lint`: **PASS** (7/7 packages green)
+  - `pnpm test`: **PASS** (24 test files, 98 tests green across `@online-zoo/game-assets`, `@online-zoo/game-core`, `@online-zoo/game-client`, `@online-zoo/server`)
+  - `pnpm --filter @online-zoo/web build`: **PASS** (Next.js production build succeeded)
+  - Playwright E2E (`playable-zoo-world.spec.ts` + `multiplayer-sync.spec.ts`): **PASS** (2 passed)
+- **Assumptions**:
+  - Logged in `specs/asset-pipeline/ASSUMPTIONS.md`: `zoneId` records each asset's primary zone (`zones[0]`) alongside `zones: AssetZoneId[]` so multi-zone shared assets (`avatar-explorer`, `prop-stone-lantern`, `prop-habitat-plaque`, `prop-wooden-bench`) work seamlessly across both `'zoo-lobby'` and `'panda-forest'`; `contentHash` uses the first 8 lowercase hex characters of SHA-256 over the emitted `.glb` buffer.
+- **Anything to Review**:
+  - None; `apps/server` ships zero assets and remains untouched, and all unit, build, and Playwright E2E checks are green.
