@@ -11,7 +11,6 @@ import {
   getHabitatZone,
   HABITAT_BOUNDARY_MARGIN,
   HABITAT_OBSTACLE_CLEARANCE,
-  InMemoryMultiplayerHub,
   loadPlayerEncyclopedia,
   MultiplayerClient,
   mutableRuntimeState,
@@ -20,7 +19,8 @@ import {
   ZOO_HABITAT_ZONES,
   type AnimalBehaviorState,
   type AnimalSpeciesId
-} from '../src';
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub } from '../src';
 
 describe('Feature 005: Animal Simulation (US1–US5, FR-001–FR-017, SC-001–SC-006)', () => {
   beforeEach(() => {

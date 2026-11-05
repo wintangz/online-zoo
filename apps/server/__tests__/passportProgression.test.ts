@@ -6,7 +6,6 @@ import {
   createDefaultPassportState,
   evaluatePassportAchievements,
   evaluateProximityZoneStamp,
-  InMemoryMultiplayerHub,
   INITIAL_ZOO_COINS,
   loadPlayerPassportState,
   PASSPORT_STORAGE_KEY,
@@ -15,9 +14,9 @@ import {
   recordPassportActivityCompletion,
   recordPassportSocialInteraction,
   recordPassportZoneStamp,
-  savePlayerPassportState,
-  ZooInstanceAuthority
-} from '../src';
+  savePlayerPassportState
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 function createMemoryStorage(): Storage {
   const map = new Map<string, string>();

@@ -3,9 +3,9 @@ import {
   DEFAULT_ROOM_ID,
   PANDA_FOREST_LAYOUT,
   parseClientMultiplayerMessage,
-  VISITOR_ACCENT_PALETTE,
-  ZooInstanceAuthority
-} from '../src';
+  VISITOR_ACCENT_PALETTE
+} from '@online-zoo/game-core';
+import { ZooInstanceAuthority } from '../src';
 
 describe('ZooInstanceAuthority (US1, US3, US4)', () => {
   it('assigns unique sessionId, sequential Explorer badges, deterministic accent colors, and collision-free spawn plaza offsets (FR-001, FR-002, FR-003)', () => {

@@ -2,14 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_AVATAR_APPEARANCE,
   gameStore,
-  InMemoryMultiplayerHub,
   loadPersistedSocialState,
   MultiplayerClient,
   parseClientMultiplayerMessage,
   resetMutableRuntimeState,
-  savePersistedSocialState,
-  ZooInstanceAuthority
-} from '../src';
+  savePersistedSocialState
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 describe('Feature 009 — Multiplayer Expansion & Zoo Instances (FR-001 to FR-012, SC-001 to SC-005)', () => {
   beforeEach(() => {

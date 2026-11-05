@@ -8,9 +8,9 @@ import {
   SEASONAL_THEMES_CATALOG,
   ZOO_EVENT_IDS,
   ZOO_EVENTS_BY_ID,
-  ZOO_EVENTS_CATALOG,
-  ZooInstanceAuthority
-} from '../src';
+  ZOO_EVENTS_CATALOG
+} from '@online-zoo/game-core';
+import { ZooInstanceAuthority } from '../src';
 
 describe('Feature 008 — Events & Activities', () => {
   it('exposes complete event catalog and seasonal theme descriptors with valid schedule windows (SC-001)', () => {

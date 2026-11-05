@@ -65,6 +65,97 @@ import {
 export const MAX_PAYLOAD_BYTES = 4096;
 export const DEFAULT_ROOM_ID = 'panda-forest-1';
 export const DEFAULT_MAX_PLAYERS_PER_ROOM = 16;
+export const DEFAULT_SERVER_PORT = 4000;
+export const DEFAULT_WS_PATH = '/ws/zoo';
+
+export interface ZoneOccupancySummary {
+  zoneId: string;
+  displayName: string;
+  roomId: string;
+  playerCount: number;
+  maxPlayers: number;
+  isFull: boolean;
+  status: ZooInstanceHealthStatus;
+}
+
+export interface OccupancySnapshotResponse {
+  status: 'ok';
+  serverTimestamp: number;
+  totalPlayers: number;
+  zones: ZoneOccupancySummary[];
+  rooms: ZooInstanceSummary[];
+}
+
+export function resolveWebSocketServerUrl(
+  roomId: string = DEFAULT_ROOM_ID,
+  explicitWsUrl?: string
+): string {
+  const envWsUrl =
+    typeof process !== 'undefined' && typeof process.env?.NEXT_PUBLIC_WS_URL === 'string'
+      ? process.env.NEXT_PUBLIC_WS_URL.trim()
+      : '';
+  const candidate = (explicitWsUrl?.trim() || envWsUrl).trim();
+
+  let rawBase = candidate;
+  if (!rawBase) {
+    if (typeof window !== 'undefined' && window.location) {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const hostname = window.location.hostname || 'localhost';
+      rawBase = `${proto}//${hostname}:${DEFAULT_SERVER_PORT}${DEFAULT_WS_PATH}`;
+    } else {
+      rawBase = `ws://localhost:${DEFAULT_SERVER_PORT}${DEFAULT_WS_PATH}`;
+    }
+  }
+
+  try {
+    const normalized = rawBase.startsWith('http://')
+      ? `ws://${rawBase.slice('http://'.length)}`
+      : rawBase.startsWith('https://')
+        ? `wss://${rawBase.slice('https://'.length)}`
+        : rawBase;
+    const urlObj = new URL(normalized);
+    if (!urlObj.pathname || urlObj.pathname === '/') {
+      urlObj.pathname = DEFAULT_WS_PATH;
+    }
+    if (!urlObj.searchParams.has('room')) {
+      urlObj.searchParams.set('room', roomId);
+    }
+    return urlObj.toString();
+  } catch {
+    const sep = rawBase.includes('?') ? '&' : '?';
+    return `${rawBase}${sep}room=${encodeURIComponent(roomId)}`;
+  }
+}
+
+export function resolveServerHttpBaseUrl(explicitWsUrl?: string): string {
+  const envWsUrl =
+    typeof process !== 'undefined' && typeof process.env?.NEXT_PUBLIC_WS_URL === 'string'
+      ? process.env.NEXT_PUBLIC_WS_URL.trim()
+      : '';
+  const candidate = (explicitWsUrl?.trim() || envWsUrl).trim();
+
+  let rawBase = candidate;
+  if (!rawBase) {
+    if (typeof window !== 'undefined' && window.location) {
+      const proto = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      const hostname = window.location.hostname || 'localhost';
+      return `${proto}//${hostname}:${DEFAULT_SERVER_PORT}`;
+    }
+    return `http://localhost:${DEFAULT_SERVER_PORT}`;
+  }
+
+  try {
+    const normalized = rawBase.startsWith('ws://')
+      ? `http://${rawBase.slice('ws://'.length)}`
+      : rawBase.startsWith('wss://')
+        ? `https://${rawBase.slice('wss://'.length)}`
+        : rawBase;
+    const urlObj = new URL(normalized);
+    return `${urlObj.protocol}//${urlObj.host}`;
+  } catch {
+    return `http://localhost:${DEFAULT_SERVER_PORT}`;
+  }
+}
 
 export const DEFAULT_PUBLIC_INSTANCES: readonly { roomId: string; label: string }[] = [
   { roomId: 'panda-forest-1', label: 'Panda Forest #1 (Main Plaza)' },

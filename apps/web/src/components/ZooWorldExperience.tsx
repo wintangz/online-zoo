@@ -26,6 +26,10 @@ const DynamicZooGameCanvas = dynamic(
 
 export const ZooWorldExperience: React.FC = () => {
   const inputController = useMemo(() => new InputController(), []);
+  const multiplayerOptions = useMemo(() => {
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    return wsUrl ? { url: wsUrl } : undefined;
+  }, []);
 
   return (
     <main
@@ -34,7 +38,10 @@ export const ZooWorldExperience: React.FC = () => {
       onDragStart={(e) => e.preventDefault()}
     >
       {/* 3D React Three Fiber + Rapier Runtime */}
-      <DynamicZooGameCanvas inputController={inputController} />
+      <DynamicZooGameCanvas
+        inputController={inputController}
+        multiplayerOptions={multiplayerOptions}
+      />
 
       {/* 2D React + Tailwind Overlays */}
       <EntryLoadingScreen />

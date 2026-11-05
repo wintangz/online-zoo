@@ -1,0 +1,33 @@
+{
+  "name": "@online-zoo/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "esbuild src/index.ts --bundle --platform=node --format=esm --external:ws --outfile=dist/index.mjs && node dist/index.mjs",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --external:ws --outfile=dist/index.mjs && tsc --noEmit",
+    "start": "node dist/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@online-zoo/game-core": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@online-zoo/config": "workspace:*",
+    "@types/node": "^20.17.6",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.21.5",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
+

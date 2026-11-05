@@ -5,7 +5,6 @@ import {
   EMOTE_CATALOG,
   gameStore,
   getEmoteDescriptor,
-  InMemoryMultiplayerHub,
   isValidEmoteId,
   loadPersistedSocialState,
   MAX_CHAT_MESSAGE_LENGTH,
@@ -15,9 +14,9 @@ import {
   savePersistedSocialState,
   SOCIAL_STATE_STORAGE_KEY,
   VALID_EMOTE_IDS,
-  validateChatMessage,
-  ZooInstanceAuthority
-} from '../src/index';
+  validateChatMessage
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 describe('Feature 004: Social Interaction (US1–US5)', () => {
   beforeEach(() => {

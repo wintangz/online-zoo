@@ -179,6 +179,37 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
+  apps/server:
+    dependencies:
+      '@online-zoo/game-core':
+        specifier: workspace:*
+        version: link:../../packages/game-core
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.1
+    devDependencies:
+      '@online-zoo/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^20.17.6
+        version: 20.19.43
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.2
+      esbuild:
+        specifier: ^0.21.5
+        version: 0.21.5
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
+
   apps/web:
     dependencies:
       '@online-zoo/game-assets':
@@ -205,9 +236,6 @@ importers:
       three:
         specifier: ^0.169.0
         version: 0.169.0
-      ws:
-        specifier: ^8.18.0
-        version: 8.22.1
       zustand:
         specifier: ^5.0.1
         version: 5.0.16(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.7.0(react@18.3.1))
@@ -230,9 +258,6 @@ importers:
       '@types/three':
         specifier: ^0.169.0
         version: 0.169.0
-      '@types/ws':
-        specifier: ^8.5.13
-        version: 8.18.2
       autoprefixer:
         specifier: ^10.4.20
         version: 10.6.2(postcss@8.5.32)

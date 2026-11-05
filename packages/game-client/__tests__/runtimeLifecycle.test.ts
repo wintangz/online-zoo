@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { clearAssetCache } from '@online-zoo/game-assets';
 import {
   attachDesktopInputBindings,
+  DEFAULT_AVATAR_APPEARANCE,
+  DEFAULT_ROOM_ID,
   gameStore,
-  InMemoryMultiplayerHub,
+  type MultiplayerTransportAdapter,
   mutableRuntimeState,
   PANDA_FOREST_LAYOUT,
   resetMutableRuntimeState
@@ -15,9 +17,69 @@ import {
 } from '../src/runtime/GameLoopController';
 import { createGameRuntimeControllers } from '../src/runtime/ZooGameCanvas';
 
+function createMockLoopbackTransportFactory(): () => MultiplayerTransportAdapter {
+  let sessionCounter = 1;
+  return () => {
+    const adapter: MultiplayerTransportAdapter = {
+      send(raw: string) {
+        const parsed = JSON.parse(raw) as { type?: string };
+        if (parsed.type === 'join_instance') {
+          const sid = `sess_${sessionCounter++}`;
+          adapter.onMessage?.(
+            JSON.stringify({
+              type: 'welcome_snapshot',
+              sessionId: sid,
+              playerId: `player_${sid}`,
+              resumeToken: `tok_${sid}`,
+              roomId: DEFAULT_ROOM_ID,
+              resumed: false,
+              displayName: 'Explorer #101',
+              accentColor: '#34d399',
+              avatar: DEFAULT_AVATAR_APPEARANCE,
+              spawnPosition: PANDA_FOREST_LAYOUT.spawnPosition,
+              spawnYaw: Math.PI,
+              visitorCount: 1,
+              players: [],
+              propStates: {},
+              seatStates: {},
+              recentChatHistory: [],
+              animals: [],
+              habitatFeedings: {},
+              currencyBalance: 50,
+              foodInventory: {
+                water: 0,
+                'bubble-tea': 0,
+                'ice-cream': 0,
+                burger: 0,
+                popcorn: 0
+              },
+              passportState: gameStore.getState().passport.state,
+              seasonalTheme: 'spring-blossom',
+              events: [],
+              availableInstances: [],
+              serverTimestamp: Date.now()
+            })
+          );
+        }
+      },
+      close() {
+        adapter.onClose?.('closed');
+      },
+      onOpen: null,
+      onMessage: null,
+      onClose: null,
+      onError: null
+    };
+    queueMicrotask(() => {
+      adapter.onOpen?.();
+    });
+    return adapter;
+  };
+}
+
 describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044, T027)', () => {
   it('handles repeated initialization, multiplayer session connection, frame stepping, and cleanup without leaking listeners or state', async () => {
-    const hub = new InMemoryMultiplayerHub();
+    const transportFactory = createMockLoopbackTransportFactory();
     for (let cycle = 0; cycle < 3; cycle++) {
       gameStore.getState().resetSession();
       gameStore.getState().setPhase('playing');
@@ -29,7 +91,7 @@ describe('Game Client Runtime Lifecycle, Resize & Obstacle Raycast (T044, T027)'
       const controllers = createGameRuntimeControllers(
         PANDA_FOREST_LAYOUT.spawnPosition,
         undefined,
-        { transportFactory: hub.createTransportFactory() }
+        { transportFactory }
       );
       controllers.multiplayerClient.connect();
       await new Promise((r) => setTimeout(r, 10));

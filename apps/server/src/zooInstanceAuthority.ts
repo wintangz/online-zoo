@@ -1,152 +1,137 @@
-import type {
-  ActiveAvatarEmote,
-  ActiveFoodConsumption,
-  AvatarAppearance,
-  BetaDiagnosticContext,
-  BetaFeedbackRecord,
-  DiagnosticErrorEntry,
-  EventErrorCode,
-  FriendRequestRecord,
-  FriendStatusEntry,
-  InstancePlacementReason,
-  MaintenanceNoticeState,
-  OpsHealthSnapshot,
-  PlayerModerationReport,
-  PlayerSessionRecord,
-  ProximityChatMessage,
-  SharedPropAuthorityState,
-  WorldSeatOccupancyState,
-  ZooInstanceHealthStatus,
-  ZooInstanceRoom,
-  ZooInstanceSummary
-} from '../types';
 import {
-  DEFAULT_AVATAR_APPEARANCE,
-  getOutfitColors,
-  isValidAvatarAppearance,
-  sanitizeAvatarAppearance
-} from '../identity/avatarCatalog';
-import { validateDisplayName } from '../identity/displayNameValidator';
-import { isValidPlayerId } from '../identity/identityPersistence';
-import {
+  ACHIEVEMENT_IDS,
+  ACHIEVEMENTS_BY_ID,
+  ANIMAL_SPECIES_IDS,
+  AnimalSimulationSystem,
   ChatRateLimiter,
-  MAX_CHAT_HISTORY_ENTRIES,
-  PROXIMITY_CHAT_RANGE_METERS,
-  SPEECH_BUBBLE_DURATION_MS,
-  validateChatMessage,
-  type ChatRateLimiterOptions
-} from '../social/chatModeration';
-import { getEmoteDescriptor, isValidEmoteId } from '../social/emoteCatalog';
-import { isValidReportReason } from '../social/socialPersistence';
-import {
+  createDefaultPassportState,
+  createEmptyFoodInventory,
   createInitialRoomSeatStates,
-  PANDA_FOREST_LAYOUT,
-  resolveHorizontalWorldCollisions,
-  type PandaForestLayoutConfig
-} from '../world/pandaForestLayout';
-import {
+  DEFAULT_AVATAR_APPEARANCE,
   DEFAULT_MAX_PLAYERS_PER_ROOM,
   DEFAULT_PUBLIC_INSTANCES,
   DEFAULT_ROOM_ID,
   deriveAccentColorFromSessionId,
+  evaluatePassportAchievements,
+  evaluateProximityZoneStamp,
+  FOOD_CATALOG_BY_ID,
+  getEmoteDescriptor,
+  getOutfitColors,
   HEARTBEAT_TIMEOUT_MS,
+  INITIAL_ZOO_COINS,
+  isValidAchievementId,
+  isValidAvatarAppearance,
+  isValidEmoteId,
+  isValidFoodItemId,
+  isValidPassportZoneId,
+  isValidPlayerId,
+  isValidReportReason,
+  isValidZooEventId,
+  MAX_CHAT_HISTORY_ENTRIES,
+  MAX_FOOD_ITEM_QUANTITY,
+  PANDA_FOREST_LAYOUT,
+  PASSPORT_ZONE_IDS,
+  PASSPORT_ZONES_BY_ID,
+  PROXIMITY_CHAT_RANGE_METERS,
+  PUBLIC_BETA_VERSION,
+  recordPassportActivityCompletion,
+  recordPassportSocialInteraction,
+  recordPassportZoneStamp,
+  resolveHorizontalWorldCollisions,
   RESUME_GRACE_WINDOW_MS,
+  RoomEventsEngine,
+  sanitizeAvatarAppearance,
+  sanitizeDiningWalletSnapshot,
+  sanitizePlayerPassportState,
+  SPEECH_BUBBLE_DURATION_MS,
+  validateBetaFeedbackInput,
+  validateChatMessage,
+  validateDisplayName,
+  ZOO_EVENTS_BY_ID,
+  type AchievementRewardResultMessage,
+  type ActiveAvatarEmote,
+  type ActiveFoodConsumption,
+  type AnimalFeedingEventMessage,
+  type AnimalInstanceState,
+  type AnimalSpeciesId,
+  type AvatarAppearance,
+  type BetaDiagnosticContext,
+  type BetaFeedbackAckMessage,
+  type BetaFeedbackRecord,
+  type ChatRateLimiterOptions,
+  type ClaimAchievementRewardMessage,
+  type ClaimEventRewardMessage,
+  type ConfigureInstanceMessage,
+  type ConfigureZooEventsMessage,
+  type ConsumeFoodItemMessage,
+  type DiagnosticErrorEntry,
   type ErrorNoticeMessage,
+  type EventErrorCode,
+  type EventRewardResultMessage,
+  type FoodConsumeResultMessage,
+  type FoodInventoryRecord,
+  type FoodPurchaseResultMessage,
+  type FriendRequestRecord,
+  type FriendStatusEntry,
+  type HabitatFeedingState,
+  type HabitatId,
+  type InstanceDirectoryUpdateMessage,
+  type InstancePlacementReason,
   type InteractPropMessage,
   type InteractSeatMessage,
   type JoinFriendInstanceMessage,
+  type JoinZooEventMessage,
+  type LeaveZooEventMessage,
+  type LiveZooEventState,
+  type MaintenanceNoticeState,
+  type OccupancySnapshotResponse,
+  type OpsHealthSnapshot,
+  type OpsSnapshotMessage,
+  type PandaForestLayoutConfig,
+  type PerformEventActionMessage,
+  type PlayerConsumptionUpdatedMessage,
   type PlayerEmoteTriggeredMessage,
   type PlayerIdentityUpdatedMessage,
   type PlayerJoinedMessage,
   type PlayerLeftMessage,
+  type PlayerModerationReport,
   type PlayerMoveMessage,
+  type PlayerPassportState,
+  type PlayerSessionRecord,
   type PropStateUpdatedMessage,
   type ProximityChatBroadcastMessage,
+  type ProximityChatMessage,
+  type PurchaseFoodItemMessage,
+  type RecordPassportProgressMessage,
   type RemoveFriendMessage,
   type ReportSubmittedAckMessage,
+  type ResolvePlayerReportMessage,
   type RespondFriendRequestMessage,
   type RoomStateTickMessage,
+  type SeasonalThemeId,
   type SeatStateUpdatedMessage,
   type SendChatMessage,
   type SendFriendRequestMessage,
   type SerializedPlayerState,
+  type SetMaintenanceNoticeMessage,
   type SetPlayerBlockMessage,
+  type SetSocialPrivacyMessage,
+  type SharedPropAuthorityState,
   type SocialPresenceUpdateMessage,
+  type SubmitBetaFeedbackMessage,
   type SubmitPlayerReportMessage,
   type SwitchInstanceMessage,
   type TriggerAnimalFeedingMessage,
   type TriggerEmoteMessage,
   type UpdateIdentityMessage,
   type WelcomeSnapshotMessage,
-  type AnimalFeedingEventMessage,
-  type AchievementRewardResultMessage,
-  type ClaimAchievementRewardMessage,
-  type ClaimEventRewardMessage,
-  type ConfigureInstanceMessage,
-  type ConfigureZooEventsMessage,
-  type ConsumeFoodItemMessage,
-  type EventRewardResultMessage,
-  type FoodConsumeResultMessage,
-  type FoodPurchaseResultMessage,
-  type InstanceDirectoryUpdateMessage,
-  type JoinZooEventMessage,
-  type LeaveZooEventMessage,
-  type PerformEventActionMessage,
-  type PlayerConsumptionUpdatedMessage,
-  type PurchaseFoodItemMessage,
-  type RecordPassportProgressMessage,
-  type SetSocialPrivacyMessage,
+  type WorldSeatOccupancyState,
+  type ZoneOccupancySummary,
   type ZooEventsSnapshotMessage,
-  type BetaFeedbackAckMessage,
-  type OpsSnapshotMessage,
-  type ResolvePlayerReportMessage,
-  type SetMaintenanceNoticeMessage,
-  type SubmitBetaFeedbackMessage
-} from './protocol';
-import {
-  PUBLIC_BETA_VERSION,
-  validateBetaFeedbackInput
-} from '../readiness';
-import {
-  ANIMAL_SPECIES_IDS,
-  AnimalSimulationSystem,
-  type AnimalInstanceState,
-  type AnimalSpeciesId,
-  type HabitatFeedingState,
-  type HabitatId
-} from '../animals';
-import {
-  createEmptyFoodInventory,
-  FOOD_CATALOG_BY_ID,
-  INITIAL_ZOO_COINS,
-  isValidFoodItemId,
-  MAX_FOOD_ITEM_QUANTITY,
-  sanitizeDiningWalletSnapshot,
-  type FoodInventoryRecord
-} from '../dining';
-import {
-  ACHIEVEMENT_IDS,
-  ACHIEVEMENTS_BY_ID,
-  createDefaultPassportState,
-  evaluatePassportAchievements,
-  evaluateProximityZoneStamp,
-  isValidAchievementId,
-  isValidPassportZoneId,
-  PASSPORT_ZONE_IDS,
-  PASSPORT_ZONES_BY_ID,
-  recordPassportActivityCompletion,
-  recordPassportSocialInteraction,
-  recordPassportZoneStamp,
-  sanitizePlayerPassportState,
-  type PlayerPassportState
-} from '../passport';
-import {
-  isValidZooEventId,
-  RoomEventsEngine,
-  ZOO_EVENTS_BY_ID,
-  type LiveZooEventState,
-  type SeasonalThemeId
-} from '../events';
+  type ZooInstanceHealthStatus,
+  type ZooInstanceRoom,
+  type ZooInstanceSummary
+} from '@online-zoo/game-core';
 
 export interface ZooInstanceAuthorityOptions {
   maxPlayersPerRoom?: number;
@@ -436,6 +421,46 @@ export class ZooInstanceAuthority {
     }
 
     return summaries;
+  }
+
+  /**
+   * Builds a live HTTP occupancy snapshot for `/occupancy` and `/api/occupancy` (`FR-002`).
+   */
+  public buildOccupancySnapshot(now = Date.now()): OccupancySnapshotResponse {
+    const rooms = this.getAvailableInstances();
+    let totalPlayers = 0;
+    for (const room of rooms) {
+      totalPlayers += room.visitorCount;
+    }
+
+    const pandaForestPrimary = rooms.find((r) => r.roomId === DEFAULT_ROOM_ID) ?? rooms[0];
+    const pandaForestRooms = rooms.filter((r) => r.roomId.startsWith('panda-forest'));
+    const pandaForestPlayers = pandaForestRooms.reduce((acc, r) => acc + r.visitorCount, 0);
+    const pandaForestMaxPlayers = pandaForestPrimary?.maxPlayers ?? this.maxPlayersPerRoom;
+    const healthyPandaRooms = pandaForestRooms.filter((r) => (r.status ?? 'healthy') === 'healthy');
+    const pandaForestHealthy = healthyPandaRooms.length > 0;
+    const pandaForestFull =
+      healthyPandaRooms.length > 0 && healthyPandaRooms.every((r) => r.isFull);
+
+    const zones: ZoneOccupancySummary[] = [
+      {
+        zoneId: 'panda-forest',
+        displayName: 'Panda Forest',
+        roomId: DEFAULT_ROOM_ID,
+        playerCount: pandaForestPlayers,
+        maxPlayers: pandaForestMaxPlayers,
+        isFull: pandaForestFull,
+        status: pandaForestHealthy ? 'healthy' : 'unhealthy'
+      }
+    ];
+
+    return {
+      status: 'ok',
+      serverTimestamp: now,
+      totalPlayers,
+      zones,
+      rooms
+    };
   }
 
   /**

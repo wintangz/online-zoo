@@ -11,7 +11,6 @@ import {
   getTotalOwnedFoodItems,
   INITIAL_FOOD_CATALOG,
   INITIAL_ZOO_COINS,
-  InMemoryMultiplayerHub,
   isValidFoodItemId,
   loadPersistedDiningWallet,
   MAX_FOOD_ITEM_QUANTITY,
@@ -21,9 +20,9 @@ import {
   resetMutableRuntimeState,
   sanitizeFoodInventory,
   savePersistedDiningWallet,
-  VALID_FOOD_ITEM_IDS,
-  ZooInstanceAuthority
-} from '../src';
+  VALID_FOOD_ITEM_IDS
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 describe('Feature 006: Food & Dining (US1–US5, FR-001–FR-012, SC-001–SC-005)', () => {
   beforeEach(() => {

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   BETA_READINESS_STORAGE_KEY,
   gameStore,
-  InMemoryMultiplayerHub,
   KNOWN_BETA_LIMITATIONS,
   loadPersistedBetaReadinessState,
   MultiplayerClient,
@@ -12,9 +11,9 @@ import {
   PUBLIC_BETA_VERSION,
   resetBetaReadinessStorageForTest,
   savePersistedBetaReadinessState,
-  VALID_BETA_FEEDBACK_CATEGORIES,
-  ZooInstanceAuthority
-} from '../src';
+  VALID_BETA_FEEDBACK_CATEGORIES
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 describe('Feature 010: Public Beta & Production Readiness', () => {
   beforeEach(() => {

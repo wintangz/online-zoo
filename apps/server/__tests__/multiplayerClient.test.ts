@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   gameStore,
-  InMemoryMultiplayerHub,
   MultiplayerClient,
   mutableRuntimeState,
   resetMutableRuntimeState
-} from '../src';
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub } from '../src';
 
 describe('MultiplayerClient Integration & Resilience (US1, US2, US3, US4)', () => {
   beforeEach(() => {

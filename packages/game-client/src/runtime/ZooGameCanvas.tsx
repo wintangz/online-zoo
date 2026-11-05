@@ -25,12 +25,12 @@ for (const url of getPreloadUrls()) {
 }
 
 export interface ZooGameRuntimeProps {
-  initialSpawn?: [number, number, number];
-  inputController?: InputController;
-  multiplayerOptions?: MultiplayerClientOptions;
-  enableMultiplayer?: boolean;
-  onReady?: () => void;
-  onDispose?: () => void;
+  initialSpawn?: [number, number, number] | undefined;
+  inputController?: InputController | undefined;
+  multiplayerOptions?: MultiplayerClientOptions | undefined;
+  enableMultiplayer?: boolean | undefined;
+  onReady?: (() => void) | undefined;
+  onDispose?: (() => void) | undefined;
 }
 
 export function createGameRuntimeControllers(

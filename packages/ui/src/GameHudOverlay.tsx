@@ -273,8 +273,24 @@ export const GameHudOverlay: React.FC = () => {
                 data-testid="lantern-state-badge"
                 className="inline-flex items-center justify-center whitespace-nowrap rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-medium leading-none text-amber-200"
               >
-                Lantern: {lanternLit ? 'Lit' : 'Dimmed'}
+                Lantern: {lanternLit ? 'Lit' : 'Off'}
               </span>
+
+              {Object.values(multiplayer.remoteVisitors).map((visitor) => (
+                <span
+                  key={visitor.sessionId}
+                  data-testid={`remote-visitor-badge-${visitor.sessionId}`}
+                  className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-medium leading-none text-emerald-100"
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: visitor.accentColor }}
+                  />
+                  <span>
+                    {visitor.displayName} ({visitor.locomotionState})
+                  </span>
+                </span>
+              ))}
 
               {benchActive && (
                 <span
@@ -395,12 +411,12 @@ export const GameHudOverlay: React.FC = () => {
           {multiplayer.status === 'disconnected' && (
             <button
               type="button"
-              data-testid="manual-reconnect-btn"
+              data-testid="reconnect-multiplayer-btn"
               data-ui-interactive="true"
               onClick={triggerManualReconnect}
               className="mt-1 inline-flex items-center justify-center whitespace-nowrap rounded-xl bg-emerald-400 px-4 py-1.5 text-center text-xs font-bold leading-none text-emerald-950 shadow transition hover:bg-emerald-300"
             >
-              Reconnect Now
+              Reconnect to Zoo
             </button>
           )}
         </div>

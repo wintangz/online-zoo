@@ -3,9 +3,9 @@ import {
   CharacterControllerCore,
   gameStore,
   PANDA_FOREST_LAYOUT,
-  resolveHorizontalWorldCollisions,
-  ZooInstanceAuthority
-} from '../src';
+  resolveHorizontalWorldCollisions
+} from '@online-zoo/game-core';
+import { ZooInstanceAuthority } from '../src';
 
 describe('Feature 011 — Streamlined HUD & Entrance Gate Arrival (FR-001..FR-007, SC-001..SC-004)', () => {
   beforeEach(() => {

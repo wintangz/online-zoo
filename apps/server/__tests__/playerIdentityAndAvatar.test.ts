@@ -3,16 +3,15 @@ import {
   AVATAR_CUSTOMIZATION_CATALOG,
   DEFAULT_AVATAR_APPEARANCE,
   gameStore,
-  InMemoryMultiplayerHub,
   isValidAvatarAppearance,
   loadOrCreatePlayerIdentity,
   MultiplayerClient,
   PLAYER_IDENTITY_STORAGE_KEY,
   sanitizeAvatarAppearance,
   savePlayerIdentity,
-  validateDisplayName,
-  ZooInstanceAuthority
-} from '../src';
+  validateDisplayName
+} from '@online-zoo/game-core';
+import { InMemoryMultiplayerHub, ZooInstanceAuthority } from '../src';
 
 function createMemoryStorage(): Pick<Storage, 'getItem' | 'setItem'> & {
   data: Map<string, string>;

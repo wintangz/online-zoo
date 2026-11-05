@@ -1,0 +1,5 @@
+{
+  "extends": "@online-zoo/config/tsconfig.base.json",
+  "include": ["src/**/*", "__tests__/**/*"]
+}
+
