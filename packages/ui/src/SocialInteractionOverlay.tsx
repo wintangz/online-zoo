@@ -876,7 +876,7 @@ export const SocialInteractionOverlay: React.FC = () => {
                         />
                         <span>
                           {friend.online
-                            ? `Online • ${friend.roomId} (${friend.roomVisitorCount}/${friend.roomMaxPlayers})${friend.allowFriendJoin === false ? ' • Private' : ''}`
+                            ? `Online • ${friend.zoneDisplayName ? `${friend.zoneDisplayName} (${friend.roomId})` : friend.roomId} (${friend.roomVisitorCount}/${friend.roomMaxPlayers})${friend.allowFriendJoin === false ? ' • Private' : ''}`
                             : 'Offline'}
                         </span>
                       </span>

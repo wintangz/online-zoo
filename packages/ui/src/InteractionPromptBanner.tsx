@@ -1,6 +1,11 @@
 import React from 'react';
 import { useStore } from 'zustand';
-import { gameStore, type InputController } from '@online-zoo/game-core';
+import {
+  findGateLinkByObjectId,
+  gameStore,
+  type InputController,
+  type ZoneGateLink
+} from '@online-zoo/game-core';
 
 export interface InteractionPromptBannerProps {
   inputController: InputController;
@@ -83,6 +88,27 @@ export const InteractionPromptBanner: React.FC<InteractionPromptBannerProps> = (
 
   const handleActivate = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
+    if (focusedObject.propReactionType === 'enter_zone_gate') {
+      const gateLink = findGateLinkByObjectId(
+        gameStore.getState().currentZoneId,
+        focusedObject.id
+      );
+      if (gateLink && typeof window !== 'undefined') {
+        const w = window as unknown as {
+          __ONLINE_ZOO_RUNTIME__?: {
+            multiplayerClient?: {
+              switchZoneViaGate: (link: ZoneGateLink) => void;
+            };
+          };
+        };
+        if (w.__ONLINE_ZOO_RUNTIME__?.multiplayerClient) {
+          w.__ONLINE_ZOO_RUNTIME__.multiplayerClient.switchZoneViaGate(gateLink);
+          return;
+        }
+      }
+      inputController.triggerAction('interact');
+      return;
+    }
     if (focusedObject.propReactionType === 'open_food_stall') {
       gameStore.getState().openFoodStall(focusedObject.id);
       return;
@@ -113,7 +139,7 @@ export const InteractionPromptBanner: React.FC<InteractionPromptBannerProps> = (
         data-testid="interaction-prompt-banner"
         data-seat-available={totalSeats > 0 ? String(!isFullSeatObject) : undefined}
         onClick={handleActivate}
-        className={`pointer-events-auto inline-flex select-none items-center justify-center gap-3 rounded-2xl border px-5 py-3 text-white shadow-2xl backdrop-blur-md transition hover:scale-[1.02] active:scale-95 ${
+        className={`pointer-events-auto inline-flex select-none items-center justify-center gap-3 rounded-2xl border px-5 py-3 text-white shadow-2xl backdrop-blur-md transition-colors ${
           isFullSeatObject
             ? 'border-rose-400/50 bg-rose-950/90'
             : 'border-amber-300/50 bg-emerald-950/90'

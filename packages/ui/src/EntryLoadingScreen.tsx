@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
-import { gameStore, PUBLIC_BETA_VERSION } from '@online-zoo/game-core';
+import { gameStore, getZoneById, PUBLIC_BETA_VERSION } from '@online-zoo/game-core';
 
 export interface EntryLoadingScreenProps {
   onEnterWorld?: () => void;
@@ -9,6 +9,8 @@ export interface EntryLoadingScreenProps {
 export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterWorld }) => {
   const phase = useStore(gameStore, (s) => s.phase);
   const loadingProgress = useStore(gameStore, (s) => s.loadingProgress);
+  const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
+  const transitionTargetZone = useStore(gameStore, (s) => s.transitionTargetZone);
   const identityProfile = useStore(gameStore, (s) => s.identity.profile);
   const setPhase = useStore(gameStore, (s) => s.setPhase);
   const openAvatarCustomizer = useStore(gameStore, (s) => s.openAvatarCustomizer);
@@ -19,10 +21,34 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
     setIsHydrated(true);
   }, []);
 
+  if (transitionTargetZone) {
+    const targetZone = getZoneById(transitionTargetZone);
+    return (
+      <div
+        data-testid="zone-transition-loading-screen"
+        className="fixed inset-0 z-50 flex select-none flex-col items-center justify-center bg-emerald-950/90 px-6 text-white backdrop-blur-md"
+      >
+        <div className="w-full max-w-md rounded-3xl border border-emerald-400/30 bg-emerald-950/90 p-6 text-center shadow-2xl">
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-300">
+            Switching Zone...
+          </p>
+          <h2
+            data-testid="zone-transition-destination-name"
+            className="mt-1 text-2xl font-extrabold text-white"
+          >
+            {targetZone.badgeIcon} {targetZone.displayName}
+          </h2>
+          <p className="mt-2 text-xs text-emerald-100/80">{targetZone.description}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (phase !== 'loading' && phase !== 'ready') {
     return null;
   }
 
+  const activeZone = getZoneById(currentZoneId);
   const isReady = phase === 'ready' || loadingProgress >= 100;
   const visibleDisplayName = isHydrated ? identityProfile.displayName : 'Explorer #101';
 
@@ -40,7 +66,7 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
       <div className="w-full max-w-lg rounded-3xl border border-emerald-400/30 bg-emerald-950/80 p-8 text-center shadow-2xl">
         <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
           <div className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500/20 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-300">
-            <span>Online Zoo • Panda Forest</span>
+            <span data-testid="entry-zone-label">Online Zoo • {activeZone.displayName}</span>
           </div>
           <span
             data-testid="entry-beta-badge"
@@ -110,7 +136,7 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
             className="flex flex-1 items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 to-lime-400 px-6 py-3.5 text-center text-base font-bold text-emerald-950 shadow-lg transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="leading-snug">
-              {isReady ? 'Enter Panda Forest' : 'Preparing World...'}
+              {isReady ? `Enter ${activeZone.displayName}` : 'Preparing World...'}
             </span>
           </button>
         </div>

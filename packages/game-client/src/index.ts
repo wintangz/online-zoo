@@ -1,6 +1,7 @@
 export * from './runtime/ZooGameCanvas';
 export * from './runtime/GameLoopController';
 export * from './environment/PandaForestScene';
+export * from './environment/ZooLobbyScene';
 export * from './environment/TerrainAndPaths';
 export * from './environment/PerimeterEnclosure';
 export * from './environment/PondShoreline';

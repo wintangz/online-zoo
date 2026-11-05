@@ -5,6 +5,7 @@ import {
   computePassportProgressSummary,
   gameStore,
   getTotalOwnedFoodItems,
+  getZoneById,
   SEASONAL_THEMES_BY_ID
 } from '@online-zoo/game-core';
 
@@ -32,6 +33,8 @@ export const GameHudOverlay: React.FC = () => {
   const maintenanceNotice = useStore(gameStore, (s) => s.betaReadiness.maintenanceNotice);
   const isHelpCenterOpen = useStore(gameStore, (s) => s.betaReadiness.isHelpCenterOpen);
   const isHudCompact = useStore(gameStore, (s) => s.isHudCompact);
+  const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
+  const activeZone = getZoneById(currentZoneId);
 
   const setPhase = useStore(gameStore, (s) => s.setPhase);
   const openAvatarCustomizer = useStore(gameStore, (s) => s.openAvatarCustomizer);
@@ -137,7 +140,10 @@ export const GameHudOverlay: React.FC = () => {
   };
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-20 flex select-none flex-col justify-between p-3 sm:p-4">
+    <div
+      data-testid="game-hud-overlay"
+      className="pointer-events-none fixed inset-0 z-20 flex select-none flex-col justify-between p-3 sm:p-4"
+    >
       {/* Top Row: Compact Sanctuary Status Pill (Left) + 3 Compact Utility Pills (Right) */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         {/* Top-Left Compact Sanctuary Status Bar */}
@@ -147,9 +153,12 @@ export const GameHudOverlay: React.FC = () => {
         >
           {/* Primary Compact Row */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-xs font-extrabold tracking-tight text-white">
-              <span>🐼</span>
-              <span>Panda Forest</span>
+            <span
+              data-testid="hud-zone-badge"
+              className="inline-flex items-center gap-1 text-xs font-extrabold tracking-tight text-white"
+            >
+              <span>{activeZone.badgeIcon}</span>
+              <span>{activeZone.displayName}</span>
             </span>
 
             <span
@@ -267,6 +276,17 @@ export const GameHudOverlay: React.FC = () => {
                 className="inline-flex items-center justify-center whitespace-nowrap rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-medium uppercase leading-none text-emerald-200/80"
               >
                 {activeDevice}
+              </span>
+
+              <span
+                data-testid="cursor-mode-badge"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-medium leading-none text-emerald-200/80"
+              >
+                {isCursorRevealed
+                  ? 'Cursor Unlocked (Alt)'
+                  : isPointerLocked
+                    ? 'Pointer Locked'
+                    : 'Free-Look Camera Active'}
               </span>
 
               <span

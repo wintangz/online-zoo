@@ -18,11 +18,14 @@ import type {
 export type LocomotionState = 'Idle' | 'Walking' | 'Running' | 'Jumping';
 export type InputDeviceMode = 'desktop' | 'touch';
 export type InteractionArchetype = 'info_plaque' | 'world_prop';
+export type WorldZoneId = 'zoo-lobby' | 'panda-forest';
+export type WorldSceneId = 'zoo-lobby' | 'panda-forest';
 export type WorldPropReaction =
   | 'toggle_lantern'
   | 'ring_chime'
   | 'rest_bench'
-  | 'open_food_stall';
+  | 'open_food_stall'
+  | 'enter_zone_gate';
 export type SessionPhase = 'loading' | 'ready' | 'playing' | 'paused';
 export type QualityTier = 'auto' | 'low' | 'medium' | 'high';
 
@@ -106,6 +109,10 @@ export interface InteractiveObjectDescriptor {
   propReactionType?: WorldPropReaction;
   /** Optional multi-seat slots when propReactionType === 'rest_bench' (FR-012 - FR-015) */
   seats?: WorldSeatSlotDescriptor[];
+  /** Optional target zone ID when propReactionType === 'enter_zone_gate' */
+  targetZoneId?: WorldZoneId;
+  /** Optional gate identifier when propReactionType === 'enter_zone_gate' */
+  gateId?: string;
 }
 
 export interface UserSettings {
@@ -408,6 +415,8 @@ export interface FriendStatusEntry {
   displayName: string;
   online: boolean;
   roomId: string | null;
+  zoneId?: WorldZoneId | null;
+  zoneDisplayName?: string | null;
   roomVisitorCount: number;
   roomMaxPlayers: number;
   canJoin: boolean;

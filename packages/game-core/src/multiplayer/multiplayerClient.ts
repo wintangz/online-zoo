@@ -46,6 +46,11 @@ import {
   type ZooEventId,
   type ZooEventScheduleConfig
 } from '../events';
+import {
+  DEFAULT_ENTRY_ROOM_ID,
+  resolveZoneForRoomId,
+  type ZoneGateLink
+} from '../world/zoneRegistry';
 
 export const RESUME_TOKEN_STORAGE_KEY = 'online-zoo:mp-resume:v1';
 
@@ -61,6 +66,7 @@ export interface MultiplayerTransportAdapter {
 export interface MultiplayerClientOptions {
   url?: string;
   roomId?: string;
+  alwaysSpawnInLobby?: boolean;
   preferFriendPlacement?: boolean;
   maxReconnectAttempts?: number;
   reconnectBackoffMs?: number[];
@@ -175,6 +181,7 @@ function hasExplicitRoomParamInUrl(): boolean {
  */
 export class MultiplayerClient {
   private roomId: string;
+  private readonly alwaysSpawnInLobby: boolean;
   private readonly preferFriendPlacement: boolean;
   private readonly url: string;
   private readonly maxReconnectAttempts: number;
@@ -208,8 +215,12 @@ export class MultiplayerClient {
   private networkSuppressed = false;
 
   constructor(options: MultiplayerClientOptions = {}) {
-    this.roomId = options.roomId ?? resolveRoomIdFromUrl(DEFAULT_ROOM_ID);
-    const hasExplicitOverride = Boolean(options.roomId) || hasExplicitRoomParamInUrl();
+    this.alwaysSpawnInLobby = options.alwaysSpawnInLobby ?? false;
+    this.roomId = this.alwaysSpawnInLobby
+      ? DEFAULT_ENTRY_ROOM_ID
+      : options.roomId ?? resolveRoomIdFromUrl(DEFAULT_ROOM_ID);
+    const hasExplicitOverride =
+      this.alwaysSpawnInLobby || Boolean(options.roomId) || hasExplicitRoomParamInUrl();
     this.preferFriendPlacement = options.preferFriendPlacement ?? !hasExplicitOverride;
     this.url = resolveDefaultWebSocketUrl(this.roomId, options.url);
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
@@ -221,7 +232,7 @@ export class MultiplayerClient {
     this.interpolationDelayMs = options.interpolationDelayMs ?? INTERPOLATION_DELAY_MS;
     this.transportFactory = options.transportFactory ?? createBrowserWebSocketTransport;
     this.onAuthoritativePositionApplied = options.onAuthoritativePositionApplied;
-    this.resumeToken = loadSavedResumeToken();
+    this.resumeToken = this.alwaysSpawnInLobby ? null : loadSavedResumeToken();
   }
 
   public getUrl(): string {
@@ -251,6 +262,14 @@ export class MultiplayerClient {
     this.intentionalDisconnect = false;
     this.networkSuppressed = false;
     this.reconnectAttempt = 0;
+
+    if (this.alwaysSpawnInLobby) {
+      this.roomId = DEFAULT_ENTRY_ROOM_ID;
+      this.resumeToken = null;
+      saveResumeToken(null);
+      gameStore.getState().setPendingGateArrival(null);
+      gameStore.getState().setTransitionTargetZone(null);
+    }
 
     gameStore.getState().updateMultiplayerState({
       status: 'connecting',
@@ -284,6 +303,9 @@ export class MultiplayerClient {
 
       adapter.onOpen = () => {
         if (this.intentionalDisconnect || this.networkSuppressed) return;
+        if (this.alwaysSpawnInLobby) {
+          this.roomId = DEFAULT_ENTRY_ROOM_ID;
+        }
         const st = gameStore.getState();
         let profile = st.identity.profile;
         if (profile.playerId === 'player-initial-visitor') {
@@ -491,17 +513,42 @@ export class MultiplayerClient {
         saveResumeToken(parsed.resumeToken);
         this.reconnectAttempt = 0;
 
-        mutableRuntimeState.avatar.position = [...parsed.spawnPosition];
-        mutableRuntimeState.avatar.facingYaw = parsed.spawnYaw;
-        mutableRuntimeState.avatar.targetYaw = parsed.spawnYaw;
-        mutableRuntimeState.reconciliation.pendingOffset = [0, 0, 0];
-        mutableRuntimeState.reconciliation.lastServerPosition = [...parsed.spawnPosition];
-        this.onAuthoritativePositionApplied?.(parsed.spawnPosition, parsed.spawnYaw);
+        const arrivedZone = resolveZoneForRoomId(parsed.roomId);
+        const pendingArrival = store.pendingGateArrival;
+        const effectiveSpawnPosition: [number, number, number] =
+          pendingArrival && pendingArrival.zoneId === arrivedZone.zoneId
+            ? [...pendingArrival.position]
+            : [...parsed.spawnPosition];
+        const effectiveSpawnYaw =
+          pendingArrival && pendingArrival.zoneId === arrivedZone.zoneId
+            ? pendingArrival.yaw
+            : parsed.spawnYaw;
 
-        this.lastSentPosition = [...parsed.spawnPosition];
-        this.lastSentYaw = parsed.spawnYaw;
+        store.setPendingGateArrival(null);
+        store.setTransitionTargetZone(null);
+        store.setCurrentZoneId(arrivedZone.zoneId);
+
+        mutableRuntimeState.avatar.position = [...effectiveSpawnPosition];
+        mutableRuntimeState.avatar.facingYaw = effectiveSpawnYaw;
+        mutableRuntimeState.avatar.targetYaw = effectiveSpawnYaw;
+        mutableRuntimeState.reconciliation.pendingOffset = [0, 0, 0];
+        mutableRuntimeState.reconciliation.lastServerPosition = [...effectiveSpawnPosition];
+        this.onAuthoritativePositionApplied?.(effectiveSpawnPosition, effectiveSpawnYaw);
+
+        this.lastSentPosition = [...effectiveSpawnPosition];
+        this.lastSentYaw = effectiveSpawnYaw;
         this.lastSentMoveAt = now;
         this.lastSentHeartbeatAt = now;
+
+        if (pendingArrival && pendingArrival.zoneId === arrivedZone.zoneId) {
+          this.sendMoveUpdate(
+            effectiveSpawnPosition,
+            [0, 0, 0],
+            effectiveSpawnYaw,
+            'Idle',
+            now
+          );
+        }
 
         store.setAllPropStatesAuthoritative(parsed.propStates);
         if (parsed.seatStates) {
@@ -548,7 +595,9 @@ export class MultiplayerClient {
           store.setSocialNotice(parsed.placementNotice);
         }
 
-        if (parsed.animals) {
+        if (!arrivedZone.hasAnimals) {
+          store.setAnimalsAuthoritative([], parsed.habitatFeedings);
+        } else if (parsed.animals) {
           store.setAnimalsAuthoritative(parsed.animals, parsed.habitatFeedings);
         }
 
@@ -653,7 +702,9 @@ export class MultiplayerClient {
           });
         }
 
-        if (parsed.animals) {
+        if (!resolveZoneForRoomId(parsed.roomId).hasAnimals) {
+          store.setAnimalsAuthoritative([], parsed.habitatFeedings);
+        } else if (parsed.animals) {
           store.setAnimalsAuthoritative(parsed.animals, parsed.habitatFeedings);
         }
         break;
@@ -1188,6 +1239,41 @@ export class MultiplayerClient {
     this.sendRaw({
       type: 'switch_instance',
       targetRoomId: trimmed
+    });
+  }
+
+  /**
+   * Transitions the local player through a zone gate into the target zone's room
+   * and spawns them at the paired return gate (`FR-004`, `FR-007`).
+   */
+  public switchZoneViaGate(gateLink: ZoneGateLink): void {
+    const store = gameStore.getState();
+    store.setFocusedObject(null);
+    store.setTransitionTargetZone(gateLink.targetZoneId);
+    store.setPendingGateArrival({
+      zoneId: gateLink.targetZoneId,
+      position: [...gateLink.arrivalPosition],
+      yaw: gateLink.arrivalYaw
+    });
+    store.setCurrentZoneId(gateLink.targetZoneId);
+
+    if (store.multiplayer.status !== 'connected') {
+      this.roomId = gateLink.targetRoomId;
+      store.updateMultiplayerState({ roomId: gateLink.targetRoomId });
+      mutableRuntimeState.avatar.position = [...gateLink.arrivalPosition];
+      mutableRuntimeState.avatar.facingYaw = gateLink.arrivalYaw;
+      mutableRuntimeState.avatar.targetYaw = gateLink.arrivalYaw;
+      mutableRuntimeState.avatar.velocity = [0, 0, 0];
+      mutableRuntimeState.avatar.locomotionState = 'Idle';
+      this.onAuthoritativePositionApplied?.(gateLink.arrivalPosition, gateLink.arrivalYaw);
+      store.setPendingGateArrival(null);
+      store.setTransitionTargetZone(null);
+      return;
+    }
+
+    this.sendRaw({
+      type: 'switch_instance',
+      targetRoomId: gateLink.targetRoomId
     });
   }
 

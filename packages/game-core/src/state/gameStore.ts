@@ -41,6 +41,7 @@ import type {
   SocialStoreSlice,
   UserSettings,
   WorldSeatOccupancyState,
+  WorldZoneId,
   ZooInstanceSummary
 } from '../types';
 import {
@@ -67,6 +68,10 @@ import {
   savePersistedSocialState
 } from '../social/socialPersistence';
 import { createInitialRoomSeatStates } from '../world/pandaForestLayout';
+import {
+  resolveZoneForRoomId,
+  ZOO_LOBBY_INTERACTIVE_OBJECTS
+} from '../world/zoneRegistry';
 import {
   ANIMAL_SPECIES_CATALOG,
   AnimalSimulationSystem,
@@ -327,7 +332,10 @@ export function createInitialSocialSlice(): SocialStoreSlice {
     chatFeedback: null,
     localActiveEmote: null,
     remoteActiveEmotes: {},
-    seatStates: createInitialRoomSeatStates(),
+    seatStates: {
+      ...createInitialRoomSeatStates(),
+      ...createInitialRoomSeatStates(ZOO_LOBBY_INTERACTIVE_OBJECTS)
+    },
     localSeatedState: null,
     isSocialDrawerOpen: false,
     availableInstances: DEFAULT_PUBLIC_INSTANCES.map((inst) => ({
@@ -505,10 +513,26 @@ export interface GameUIStoreState {
   events: EventsStoreSlice;
   betaReadiness: BetaReadinessStoreSlice;
   isHudCompact: boolean;
+  currentZoneId: WorldZoneId;
+  transitionTargetZone: WorldZoneId | null;
+  pendingGateArrival: {
+    zoneId: WorldZoneId;
+    position: [number, number, number];
+    yaw: number;
+  } | null;
 
   setPhase: (phase: SessionPhase) => void;
   setHudCompact: (compact: boolean) => void;
   toggleHudCompact: () => void;
+  setCurrentZoneId: (zoneId: WorldZoneId) => void;
+  setTransitionTargetZone: (zoneId: WorldZoneId | null) => void;
+  setPendingGateArrival: (
+    arrival: {
+      zoneId: WorldZoneId;
+      position: [number, number, number];
+      yaw: number;
+    } | null
+  ) => void;
   setLoadingProgress: (progress: number) => void;
   setLocomotionState: (state: LocomotionState) => void;
   setActiveDevice: (device: InputDeviceMode) => void;
@@ -730,7 +754,9 @@ const INITIAL_PROP_STATES: Record<string, { active: boolean; lastTriggeredAt: nu
   'prop-plaza-bench': { active: false, lastTriggeredAt: 0 },
   'prop-pond-chair': { active: false, lastTriggeredAt: 0 },
   'prop-plaza-cafe-table': { active: false, lastTriggeredAt: 0 },
-  'prop-bamboo-picnic-table': { active: false, lastTriggeredAt: 0 }
+  'prop-bamboo-picnic-table': { active: false, lastTriggeredAt: 0 },
+  'prop-lobby-bench-west': { active: false, lastTriggeredAt: 0 },
+  'prop-lobby-bench-east': { active: false, lastTriggeredAt: 0 }
 };
 
 export const gameStore = createStore<GameUIStoreState>((set, get) => ({
@@ -753,9 +779,15 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   events: createInitialEventsSlice(),
   betaReadiness: createInitialBetaReadinessSlice(),
   isHudCompact: false,
+  currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
+  transitionTargetZone: null,
+  pendingGateArrival: null,
 
   setHudCompact: (isHudCompact) => set({ isHudCompact }),
   toggleHudCompact: () => set((state) => ({ isHudCompact: !state.isHudCompact })),
+  setCurrentZoneId: (currentZoneId) => set({ currentZoneId }),
+  setTransitionTargetZone: (transitionTargetZone) => set({ transitionTargetZone }),
+  setPendingGateArrival: (pendingGateArrival) => set({ pendingGateArrival }),
   setPhase: (phase) =>
     set((state) => ({
       phase,
@@ -819,6 +851,9 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     })),
   updateMultiplayerState: (partial) =>
     set((state) => ({
+      ...(partial.roomId !== undefined
+        ? { currentZoneId: resolveZoneForRoomId(partial.roomId).zoneId }
+        : {}),
       multiplayer: {
         ...state.multiplayer,
         ...partial
@@ -2709,7 +2744,10 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       passport: createInitialPassportSlice(),
       events: createInitialEventsSlice(),
       betaReadiness: createInitialBetaReadinessSlice(),
-      isHudCompact: false
+      isHudCompact: false,
+      currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
+      transitionTargetZone: null,
+      pendingGateArrival: null
     });
   }
 }));

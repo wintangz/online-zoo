@@ -260,6 +260,17 @@ export const PANDA_FOREST_INTERACTIVE_OBJECTS: InteractiveObjectDescriptor[] = [
         facingYaw: -Math.PI / 2
       }
     ]
+  },
+  {
+    id: 'gate-to-zoo-lobby',
+    title: 'Zoo Lobby Entrance Archway',
+    promptAction: 'Enter Zoo Lobby?',
+    archetype: 'world_prop',
+    position: [0, 0, 16.4],
+    interactionRadius: 2.8,
+    propReactionType: 'enter_zone_gate',
+    targetZoneId: 'zoo-lobby',
+    gateId: 'gate-to-zoo-lobby'
   }
 ];
 

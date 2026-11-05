@@ -4,11 +4,14 @@ import {
   ANIMAL_DISCOVERY_RADIUS_METERS,
   CameraControllerCore,
   CharacterControllerCore,
+  findGateLinkByObjectId,
   gameStore,
+  getZoneById,
   InputController,
   InteractionSystem,
   MultiplayerClient,
   mutableRuntimeState,
+  type PandaForestLayoutConfig,
   PANDA_FOREST_LAYOUT,
   PerformanceMonitor,
   resolveHorizontalWorldCollisions
@@ -33,7 +36,8 @@ export function computeCameraObstacleHitDistance(
   pivot: [number, number, number],
   yaw: number,
   pitch: number,
-  maxDistance: number
+  maxDistance: number,
+  layout: PandaForestLayoutConfig = PANDA_FOREST_LAYOUT
 ): number | null {
   const dirX = Math.cos(pitch) * Math.sin(yaw);
   const dirY = Math.sin(pitch);
@@ -42,7 +46,7 @@ export function computeCameraObstacleHitDistance(
   let closestHit: number | null = null;
 
   // 1. Check ray against cylinder obstacles (trees, rocks, bamboo clusters)
-  for (const obs of PANDA_FOREST_LAYOUT.obstacles) {
+  for (const obs of layout.obstacles) {
     if (pivot[1] > obs.height + 0.5) continue;
     const ox = pivot[0] - obs.position[0];
     const oz = pivot[2] - obs.position[2];
@@ -65,12 +69,12 @@ export function computeCameraObstacleHitDistance(
     }
   }
 
-  // 2. Check ray against outer perimeter enclosure wall (radius: 36m)
+  // 2. Check ray against outer perimeter enclosure wall
   {
     const a = dirX * dirX + dirZ * dirZ;
     if (a > 1e-6) {
       const b = 2 * (pivot[0] * dirX + pivot[2] * dirZ);
-      const r = PANDA_FOREST_LAYOUT.perimeterRadius;
+      const r = layout.perimeterRadius;
       const c = pivot[0] * pivot[0] + pivot[2] * pivot[2] - r * r;
       const disc = b * b - 4 * a * c;
       if (disc >= 0) {
@@ -99,6 +103,9 @@ export function stepGameRuntimeTick(
     multiplayerClient
   } = controllers;
   const storeState = gameStore.getState();
+  const activeZone = getZoneById(storeState.currentZoneId);
+  const activeLayout = activeZone.layout;
+  interactionSystem.setObjects(activeLayout.interactiveObjects);
 
   const snapshot = inputController.consumeFrameSnapshot();
   storeState.setActiveDevice(snapshot.activeDevice);
@@ -197,16 +204,16 @@ export function stepGameRuntimeTick(
     const candidateY = prevAvatar.position[1] + stepOut.desiredTranslation[1];
     const candidateZ = prevAvatar.position[2] + stepOut.desiredTranslation[2];
 
-    // 2. Resolve horizontal collisions against rocks, trees, bamboo, pond shoreline, and perimeter
+    // 2. Resolve horizontal collisions against active zone obstacles, pond shoreline, and perimeter
     const collisionResolved = resolveHorizontalWorldCollisions(
       [candidateX, candidateY, candidateZ],
       0.45,
-      PANDA_FOREST_LAYOUT
+      activeLayout
     );
 
     const grounded =
       stepOut.velocity[1] <= 0 &&
-      collisionResolved.position[1] <= PANDA_FOREST_LAYOUT.worldBounds.minY + 0.1001;
+      collisionResolved.position[1] <= activeLayout.worldBounds.minY + 0.1001;
     const finalY = grounded ? 0.1 : collisionResolved.position[1];
 
     characterController.commitPhysicsResult(
@@ -222,53 +229,57 @@ export function stepGameRuntimeTick(
   // 3. Step Multiplayer Client (20Hz move updates, <2.0m/>=2.0m reconciliation, 60Hz remote interpolation)
   multiplayerClient?.stepFrame(dt);
 
-  // 3b. Step Animal Simulation smoothly at 60Hz and evaluate natural proximity discovery (FR-001..FR-012)
-  mutableRuntimeState.animalSimulation.step(dt);
-  if (
-    storeState.multiplayer.status !== 'connected' ||
-    mutableRuntimeState.frameCount % 6 === 0
-  ) {
-    gameStore.setState((cur) => ({
-      animalSim: {
-        ...cur.animalSim,
-        animals: mutableRuntimeState.animalSimulation.getAnimals(),
-        habitatFeedings: mutableRuntimeState.animalSimulation.getHabitatFeedings()
-      }
-    }));
-  }
-
+  // 3b. Step Animal Simulation smoothly at 60Hz when the active zone has animals (FR-001..FR-012)
   let closestAnimalId: string | null = null;
   let closestAnimalDist = Number.POSITIVE_INFINITY;
-  const currentAnimals = mutableRuntimeState.animalSimulation.getAnimals();
-  const currentEncyclopedia = gameStore.getState().animalSim.encyclopedia;
-  for (const animal of currentAnimals) {
-    const adx = mutableRuntimeState.avatar.position[0] - animal.position[0];
-    const adz = mutableRuntimeState.avatar.position[2] - animal.position[2];
-    const adist = Math.hypot(adx, adz);
-    if (adist < closestAnimalDist) {
-      closestAnimalDist = adist;
-      closestAnimalId = animal.animalId;
-    }
+  if (activeZone.hasAnimals) {
+    mutableRuntimeState.animalSimulation.step(dt);
     if (
-      adist <= ANIMAL_DISCOVERY_RADIUS_METERS &&
-      !currentEncyclopedia.entries[animal.speciesId].discovered
+      storeState.multiplayer.status !== 'connected' ||
+      mutableRuntimeState.frameCount % 6 === 0
     ) {
-      const newlyDiscovered = storeState.discoverAnimalSpecies(animal.speciesId);
-      if (newlyDiscovered) {
-        multiplayerClient?.recordPassportProgress({
-          speciesId: animal.speciesId
-        });
+      gameStore.setState((cur) => ({
+        animalSim: {
+          ...cur.animalSim,
+          animals: mutableRuntimeState.animalSimulation.getAnimals(),
+          habitatFeedings: mutableRuntimeState.animalSimulation.getHabitatFeedings()
+        }
+      }));
+    }
+
+    const currentAnimals = mutableRuntimeState.animalSimulation.getAnimals();
+    const currentEncyclopedia = gameStore.getState().animalSim.encyclopedia;
+    for (const animal of currentAnimals) {
+      const adx = mutableRuntimeState.avatar.position[0] - animal.position[0];
+      const adz = mutableRuntimeState.avatar.position[2] - animal.position[2];
+      const adist = Math.hypot(adx, adz);
+      if (adist < closestAnimalDist) {
+        closestAnimalDist = adist;
+        closestAnimalId = animal.animalId;
+      }
+      if (
+        adist <= ANIMAL_DISCOVERY_RADIUS_METERS &&
+        !currentEncyclopedia.entries[animal.speciesId].discovered
+      ) {
+        const newlyDiscovered = storeState.discoverAnimalSpecies(animal.speciesId);
+        if (newlyDiscovered) {
+          multiplayerClient?.recordPassportProgress({
+            speciesId: animal.speciesId
+          });
+        }
       }
     }
   }
 
   // 3c. Evaluate natural Zoo Passport zone stamps (FR-001..FR-004, SC-001)
-  const zoneRes = storeState.evaluateProximityPassportZones(
-    mutableRuntimeState.avatar.position
-  );
-  if (zoneRes.newlyStampedZoneIds.length > 0) {
-    for (const zId of zoneRes.newlyStampedZoneIds) {
-      multiplayerClient?.recordPassportProgress({ zoneId: zId });
+  if (activeZone.hasAnimals) {
+    const zoneRes = storeState.evaluateProximityPassportZones(
+      mutableRuntimeState.avatar.position
+    );
+    if (zoneRes.newlyStampedZoneIds.length > 0) {
+      for (const zId of zoneRes.newlyStampedZoneIds) {
+        multiplayerClient?.recordPassportProgress({ zoneId: zId });
+      }
     }
   }
 
@@ -282,7 +293,8 @@ export function stepGameRuntimeTick(
     pivot,
     prevCam.yaw,
     prevCam.pitch,
-    prevCam.targetDistance
+    prevCam.targetDistance,
+    activeLayout
   );
 
   const camOut = cameraController.step({
@@ -335,7 +347,26 @@ export function stepGameRuntimeTick(
     if (evalResult.focusedObject) {
       const triggered = interactionSystem.trigger(evalResult.focusedObject.id);
       if (triggered) {
-        if (triggered.archetype === 'info_plaque') {
+        if (triggered.descriptor.propReactionType === 'enter_zone_gate') {
+          const gateLink = findGateLinkByObjectId(
+            storeState.currentZoneId,
+            triggered.descriptor.id
+          );
+          if (gateLink) {
+            inputController.resetAll();
+            if (multiplayerClient) {
+              multiplayerClient.switchZoneViaGate(gateLink);
+            } else {
+              storeState.setFocusedObject(null);
+              storeState.setCurrentZoneId(gateLink.targetZoneId);
+              characterController.commitPhysicsResult(gateLink.arrivalPosition, true);
+              const av = characterController.getState();
+              av.facingYaw = gateLink.arrivalYaw;
+              av.targetYaw = gateLink.arrivalYaw;
+              mutableRuntimeState.avatar = av;
+            }
+          }
+        } else if (triggered.archetype === 'info_plaque') {
           if (storeState.activePlaqueModal?.id === triggered.descriptor.id) {
             storeState.closePlaqueModal();
           } else {

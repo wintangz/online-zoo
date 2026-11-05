@@ -130,6 +130,32 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     });
     await expect(page.getByTestId('virtual-joystick-pad')).toBeHidden();
 
+    // 5b. Verify player spawned in Zoo Lobby and transition through the North Gate into Panda Forest
+    await expect(page.getByTestId('hud-zone-badge')).toContainText('Zoo Lobby');
+    await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: {
+          characterController: { commitPhysicsResult: (pos: [number, number, number], g: boolean) => void };
+          stepFrames: (n: number) => void;
+        };
+      }).__ONLINE_ZOO_RUNTIME__;
+      // Move near North Gate to Panda Forest at [0, 0, 8.5]
+      rt.characterController.commitPhysicsResult([0, 0.1, 10.5], true);
+      rt.stepFrames(2);
+    });
+
+    const promptBanner = page.getByTestId('interaction-prompt-banner');
+    await expect(promptBanner).toBeVisible();
+    await expect(promptBanner).toContainText('Enter Panda Forest?');
+    await promptBanner.click();
+    await page.evaluate(() => {
+      const rt = (window as unknown as { __ONLINE_ZOO_RUNTIME__: { stepFrames: (n: number) => void } }).__ONLINE_ZOO_RUNTIME__;
+      rt.stepFrames(2);
+    });
+    await expect(page.getByTestId('hud-zone-badge')).toContainText('Panda Forest', {
+      timeout: 5000
+    });
+
     // 6. Contextual Environment Interaction: Habitat Info Plaque & Stone Lantern (US3, FR-015..FR-018)
     await page.evaluate(() => {
       const rt = (window as unknown as {
@@ -143,7 +169,6 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
       rt.stepFrames(2);
     });
 
-    const promptBanner = page.getByTestId('interaction-prompt-banner');
     await expect(promptBanner).toBeVisible();
     await expect(promptBanner).toContainText('Giant Panda Habitat Plaque');
 

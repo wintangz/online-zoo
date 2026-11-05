@@ -8,6 +8,7 @@ import {
   createEmptyFoodInventory,
   createInitialRoomSeatStates,
   DEFAULT_AVATAR_APPEARANCE,
+  DEFAULT_ENTRY_ROOM_ID,
   DEFAULT_MAX_PLAYERS_PER_ROOM,
   DEFAULT_PUBLIC_INSTANCES,
   DEFAULT_ROOM_ID,
@@ -16,6 +17,7 @@ import {
   evaluateProximityZoneStamp,
   FOOD_CATALOG_BY_ID,
   getEmoteDescriptor,
+  getLayoutForRoomId,
   getOutfitColors,
   HEARTBEAT_TIMEOUT_MS,
   INITIAL_ZOO_COINS,
@@ -38,6 +40,7 @@ import {
   recordPassportSocialInteraction,
   recordPassportZoneStamp,
   resolveHorizontalWorldCollisions,
+  resolveZoneForRoomId,
   RESUME_GRACE_WINDOW_MS,
   RoomEventsEngine,
   sanitizeAvatarAppearance,
@@ -47,6 +50,7 @@ import {
   validateBetaFeedbackInput,
   validateChatMessage,
   validateDisplayName,
+  WORLD_ZONES_LIST,
   ZOO_EVENTS_BY_ID,
   type AchievementRewardResultMessage,
   type ActiveAvatarEmote,
@@ -209,6 +213,7 @@ export class ZooInstanceAuthority {
   private readonly resumeGraceWindowMs: number;
   private readonly proximityChatRangeMeters: number;
   private readonly layout: PandaForestLayoutConfig;
+  private readonly hasCustomLayout: boolean;
   private readonly chatRateLimiter: ChatRateLimiter;
   private readonly rooms = new Map<string, ZooInstanceRoom>();
   private readonly roomAnimalSystems = new Map<string, AnimalSimulationSystem>();
@@ -251,7 +256,12 @@ export class ZooInstanceAuthority {
     this.proximityChatRangeMeters =
       options.proximityChatRangeMeters ?? PROXIMITY_CHAT_RANGE_METERS;
     this.layout = options.layout ?? PANDA_FOREST_LAYOUT;
+    this.hasCustomLayout = Boolean(options.layout);
     this.chatRateLimiter = new ChatRateLimiter(options.chatRateLimiterOptions);
+  }
+
+  private getEffectiveLayoutForRoom(roomId: string): PandaForestLayoutConfig {
+    return this.hasCustomLayout ? this.layout : getLayoutForRoomId(roomId);
   }
 
   public getRoom(roomId: string): ZooInstanceRoom | undefined {
@@ -284,6 +294,9 @@ export class ZooInstanceAuthority {
   }
 
   public getRoomAnimals(roomId: string = DEFAULT_ROOM_ID): AnimalInstanceState[] {
+    if (!resolveZoneForRoomId(roomId).hasAnimals) {
+      return [];
+    }
     return this.getOrCreateAnimalSystem(roomId).getAnimals();
   }
 
@@ -320,6 +333,13 @@ export class ZooInstanceAuthority {
   }
 
   public getInstanceLabel(roomId: string): string {
+    if (roomId === 'zoo-lobby-1') {
+      return 'Zoo Lobby #1 (Entrance Plaza)';
+    }
+    const lobbyMatch = /^zoo-lobby-(\d+)$/.exec(roomId);
+    if (lobbyMatch && lobbyMatch[1]) {
+      return `Zoo Lobby #${lobbyMatch[1]} (Entrance Plaza)`;
+    }
     for (const preset of DEFAULT_PUBLIC_INSTANCES) {
       if (preset.roomId === roomId) {
         return preset.label;
@@ -433,26 +453,27 @@ export class ZooInstanceAuthority {
       totalPlayers += room.visitorCount;
     }
 
-    const pandaForestPrimary = rooms.find((r) => r.roomId === DEFAULT_ROOM_ID) ?? rooms[0];
-    const pandaForestRooms = rooms.filter((r) => r.roomId.startsWith('panda-forest'));
-    const pandaForestPlayers = pandaForestRooms.reduce((acc, r) => acc + r.visitorCount, 0);
-    const pandaForestMaxPlayers = pandaForestPrimary?.maxPlayers ?? this.maxPlayersPerRoom;
-    const healthyPandaRooms = pandaForestRooms.filter((r) => (r.status ?? 'healthy') === 'healthy');
-    const pandaForestHealthy = healthyPandaRooms.length > 0;
-    const pandaForestFull =
-      healthyPandaRooms.length > 0 && healthyPandaRooms.every((r) => r.isFull);
+    const zones: ZoneOccupancySummary[] = WORLD_ZONES_LIST.map((zone) => {
+      const prefix = zone.roomId.replace(/-\d+$/, '');
+      const matchingRooms = rooms.filter((r) => r.roomId.startsWith(prefix));
+      const zonePlayers = matchingRooms.reduce((acc, r) => acc + r.visitorCount, 0);
+      const primaryRoom = rooms.find((r) => r.roomId === zone.roomId);
+      const maxPlayers = primaryRoom?.maxPlayers ?? this.maxPlayersPerRoom;
+      const healthyRooms = matchingRooms.filter((r) => (r.status ?? 'healthy') === 'healthy');
+      const isHealthy = matchingRooms.length === 0 || healthyRooms.length > 0;
+      const isFull =
+        healthyRooms.length > 0 && healthyRooms.every((r) => r.isFull);
 
-    const zones: ZoneOccupancySummary[] = [
-      {
-        zoneId: 'panda-forest',
-        displayName: 'Panda Forest',
-        roomId: DEFAULT_ROOM_ID,
-        playerCount: pandaForestPlayers,
-        maxPlayers: pandaForestMaxPlayers,
-        isFull: pandaForestFull,
-        status: pandaForestHealthy ? 'healthy' : 'unhealthy'
-      }
-    ];
+      return {
+        zoneId: zone.zoneId,
+        displayName: zone.displayName,
+        roomId: zone.roomId,
+        playerCount: zonePlayers,
+        maxPlayers,
+        isFull,
+        status: isHealthy ? 'healthy' : 'unhealthy'
+      };
+    });
 
     return {
       status: 'ok',
@@ -608,9 +629,22 @@ export class ZooInstanceAuthority {
         active: false,
         lastTriggeredBy: null,
         lastTriggeredAt: 0
+      },
+      'prop-lobby-bench-west': {
+        objectId: 'prop-lobby-bench-west',
+        active: false,
+        lastTriggeredBy: null,
+        lastTriggeredAt: 0
+      },
+      'prop-lobby-bench-east': {
+        objectId: 'prop-lobby-bench-east',
+        active: false,
+        lastTriggeredBy: null,
+        lastTriggeredAt: 0
       }
     };
 
+    const roomLayout = this.getEffectiveLayoutForRoom(requestedRoomId);
     existing = {
       roomId: requestedRoomId,
       maxPlayers: this.maxPlayersPerRoom,
@@ -619,7 +653,7 @@ export class ZooInstanceAuthority {
       activeSessions: new Map(),
       resumableSessions: new Map(),
       propStates: initialProps,
-      seatStates: createInitialRoomSeatStates(this.layout.interactiveObjects),
+      seatStates: createInitialRoomSeatStates(roomLayout.interactiveObjects),
       recentChatHistory: [],
       tickSequence: 0,
       lastTickAt: now
@@ -643,12 +677,14 @@ export class ZooInstanceAuthority {
     if (preferFriendPlacement && playerId) {
       const friendSet = this.friendships.get(playerId);
       if (friendSet && friendSet.size > 0) {
+        const requestedZoneId = resolveZoneForRoomId(requestedRoomId).zoneId;
         const candidateCounts = new Map<string, number>();
         for (const friendId of friendSet) {
           if (this.isPlayerBlocked(playerId, friendId)) continue;
           if (!this.getPlayerAllowFriendJoin(friendId)) continue;
           const friendSession = this.findActiveSessionByPlayerId(friendId);
           if (!friendSession) continue;
+          if (resolveZoneForRoomId(friendSession.roomId).zoneId !== requestedZoneId) continue;
           if (excludedRoomIds?.has(friendSession.roomId)) continue;
           const friendRoom = this.rooms.get(friendSession.roomId);
           if (
@@ -701,10 +737,13 @@ export class ZooInstanceAuthority {
     }
 
     // 3. Otherwise find the first healthy preset or overflow room with available capacity (FR-002, FR-005, FR-007)
+    const requestedZoneId = resolveZoneForRoomId(requestedRoomId).zoneId;
     const rawPrefix = requestedRoomId.replace(/-\d+$/, '');
     const basePrefix = rawPrefix || 'panda-forest';
     const candidateIds: string[] = [
-      ...DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId)
+      ...DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId).filter(
+        (rid) => resolveZoneForRoomId(rid).zoneId === requestedZoneId
+      )
     ];
     for (let idx = 1; idx < 100; idx++) {
       const cid = `${basePrefix}-${idx}`;
@@ -789,8 +828,9 @@ export class ZooInstanceAuthority {
     return leftBroadcasts;
   }
 
-  public computeSpawnPosition(spawnIndex: number): [number, number, number] {
-    const base = this.layout.spawnPosition;
+  public computeSpawnPosition(spawnIndex: number, roomId?: string): [number, number, number] {
+    const roomLayout = roomId ? this.getEffectiveLayoutForRoom(roomId) : this.layout;
+    const base = roomLayout.spawnPosition;
     if (spawnIndex <= 0) {
       return [base[0], base[1], base[2]];
     }
@@ -803,7 +843,7 @@ export class ZooInstanceAuthority {
     const resolved = resolveHorizontalWorldCollisions(
       [candidateX, base[1], candidateZ],
       AVATAR_COLLIDER_RADIUS,
-      this.layout
+      roomLayout
     );
     return [
       Number(resolved.position[0].toFixed(3)),
@@ -1035,8 +1075,16 @@ export class ZooInstanceAuthority {
           const avatar = params.avatar
             ? sanitizeAvatarAppearance(params.avatar)
             : { ...resumable.record.avatar };
+          const targetResumeRoom =
+            requestedRoomId === DEFAULT_ENTRY_ROOM_ID
+              ? this.getOrCreateRoom(DEFAULT_ENTRY_ROOM_ID, now)
+              : room;
+          const forceLobbySpawn = requestedRoomId === DEFAULT_ENTRY_ROOM_ID;
+          const lobbySpawnPos = forceLobbySpawn
+            ? this.computeSpawnPosition(targetResumeRoom.activeSessions.size, DEFAULT_ENTRY_ROOM_ID)
+            : null;
           const displayName = this.disambiguateDisplayName(
-            room,
+            targetResumeRoom,
             baseDisplayName,
             resumable.record.sessionId,
             resumable.record.playerId
@@ -1059,6 +1107,7 @@ export class ZooInstanceAuthority {
 
           const resumedRecord: PlayerSessionRecord = {
             ...resumable.record,
+            roomId: targetResumeRoom.roomId,
             baseDisplayName,
             displayName,
             avatar,
@@ -1071,6 +1120,12 @@ export class ZooInstanceAuthority {
             activeConsumption: null,
             transform: {
               ...resumable.record.transform,
+              ...(lobbySpawnPos
+                ? {
+                    position: [lobbySpawnPos[0], lobbySpawnPos[1], lobbySpawnPos[2]],
+                    facingYaw: Math.PI
+                  }
+                : {}),
               velocity: [0, 0, 0],
               locomotionState: 'Idle',
               serverTimestamp: now,
@@ -1078,8 +1133,8 @@ export class ZooInstanceAuthority {
               discrepancyDistance: 0
             }
           };
-          room.activeSessions.set(resumedRecord.sessionId, resumedRecord);
-          this.sessionToRoom.set(resumedRecord.sessionId, room.roomId);
+          targetResumeRoom.activeSessions.set(resumedRecord.sessionId, resumedRecord);
+          this.sessionToRoom.set(resumedRecord.sessionId, targetResumeRoom.roomId);
           this.knownPlayerNames.set(resumedRecord.playerId, resumedRecord.baseDisplayName);
           this.syncInitialSocialLists(
             resumedRecord.playerId,
@@ -1089,14 +1144,14 @@ export class ZooInstanceAuthority {
 
           const serializedSelf = serializePlayerRecord(resumedRecord);
           return {
-            welcome: this.buildWelcomeSnapshot(room, resumedRecord, true, now, {
+            welcome: this.buildWelcomeSnapshot(targetResumeRoom, resumedRecord, true, now, {
               placementReason: 'requested'
             }),
             joinedBroadcast: {
               type: 'player_joined',
-              roomId: room.roomId,
+              roomId: targetResumeRoom.roomId,
               player: serializedSelf,
-              visitorCount: room.activeSessions.size,
+              visitorCount: targetResumeRoom.activeSessions.size,
               serverTimestamp: now
             },
             purgedDuplicates
@@ -1156,8 +1211,8 @@ export class ZooInstanceAuthority {
         ? getOutfitColors(avatar.outfit).accent
         : deriveAccentColorFromSessionId(sessionId);
     const spawnIndex = room.activeSessions.size;
-    const spawnPosition = this.computeSpawnPosition(spawnIndex);
-    const spawnYaw = Math.PI; // Facing North (-Z) down the Panda Forest trail
+    const spawnPosition = this.computeSpawnPosition(spawnIndex, room.roomId);
+    const spawnYaw = Math.PI; // Facing North (-Z)
     const wallet = this.getOrInitPlayerWallet(playerId, params.diningWallet);
     this.getOrInitPlayerPassport(
       playerId,
@@ -1409,7 +1464,9 @@ export class ZooInstanceAuthority {
         ? { placementNotice: placementMeta.placementNotice }
         : {}),
       allowFriendJoin: this.getPlayerAllowFriendJoin(selfRecord.playerId),
-      animals: this.getOrCreateAnimalSystem(room.roomId, now).getAnimals(),
+      animals: resolveZoneForRoomId(room.roomId).hasAnimals
+        ? this.getOrCreateAnimalSystem(room.roomId, now).getAnimals()
+        : [],
       habitatFeedings: this.getOrCreateAnimalSystem(room.roomId, now).getHabitatFeedings(),
       diningWallet: {
         currencyBalance: selfRecord.currencyBalance ?? INITIAL_ZOO_COINS,
@@ -1466,8 +1523,13 @@ export class ZooInstanceAuthority {
     const dx = targetX - prevPos[0];
     const dz = targetZ - prevPos[2];
     const horizontalDist = Math.hypot(dx, dz);
-    const maxAllowedDist =
-      MAX_LEGAL_RUN_SPEED * JITTER_TOLERANCE_FACTOR * dt + BASE_DISPLACEMENT_SLACK;
+    const isIdleSnapPlacement =
+      msg.locomotionState === 'Idle' &&
+      Math.hypot(msg.velocity[0], msg.velocity[2]) < 1e-4 &&
+      horizontalDist <= 15.0;
+    const maxAllowedDist = isIdleSnapPlacement
+      ? 15.0
+      : MAX_LEGAL_RUN_SPEED * JITTER_TOLERANCE_FACTOR * dt + BASE_DISPLACEMENT_SLACK;
 
     if (horizontalDist > maxAllowedDist && horizontalDist > 1e-5) {
       const scale = maxAllowedDist / horizontalDist;
@@ -1479,7 +1541,7 @@ export class ZooInstanceAuthority {
     const collisionResolved = resolveHorizontalWorldCollisions(
       [targetX, targetY, targetZ],
       AVATAR_COLLIDER_RADIUS,
-      this.layout
+      this.getEffectiveLayoutForRoom(room.roomId)
     );
 
     if (collisionResolved.collided) {
@@ -2063,11 +2125,17 @@ export class ZooInstanceAuthority {
         this.knownPlayerNames.get(friendId) ??
         friendId;
 
+      const friendZone = activeSession
+        ? resolveZoneForRoomId(activeSession.roomId)
+        : null;
+
       friends.push({
         playerId: friendId,
         displayName,
         online: Boolean(activeSession),
         roomId: activeSession ? activeSession.roomId : null,
+        zoneId: friendZone ? friendZone.zoneId : null,
+        zoneDisplayName: friendZone ? friendZone.displayName : null,
         roomVisitorCount,
         roomMaxPlayers,
         allowFriendJoin: friendAllowJoin,
@@ -2387,7 +2455,7 @@ export class ZooInstanceAuthority {
     const candidateNearFriend = resolveHorizontalWorldCollisions(
       [friendPos[0] + 1.4, 0.1, friendPos[2] + 1.2],
       AVATAR_COLLIDER_RADIUS,
-      this.layout
+      this.getEffectiveLayoutForRoom(targetRoom.roomId)
     ).position;
 
     session.roomId = targetRoom.roomId;
@@ -2520,7 +2588,16 @@ export class ZooInstanceAuthority {
     };
 
     const spawnIndex = targetRoom.activeSessions.size;
-    const spawnPos = this.computeSpawnPosition(spawnIndex);
+    const fromZone = resolveZoneForRoomId(currentRoom.roomId);
+    const toZone = resolveZoneForRoomId(targetRoom.roomId);
+    const matchingGate =
+      fromZone.zoneId !== toZone.zoneId
+        ? fromZone.gateLinks.find((g) => g.targetZoneId === toZone.zoneId) ?? null
+        : null;
+    const spawnPos = matchingGate
+      ? matchingGate.arrivalPosition
+      : this.computeSpawnPosition(spawnIndex, targetRoom.roomId);
+    const spawnYaw = matchingGate ? matchingGate.arrivalYaw : Math.PI;
 
     session.roomId = targetRoom.roomId;
     session.spawnIndex = spawnIndex;
@@ -2538,7 +2615,7 @@ export class ZooInstanceAuthority {
       ...session.transform,
       position: [spawnPos[0], spawnPos[1], spawnPos[2]],
       velocity: [0, 0, 0],
-      facingYaw: Math.PI,
+      facingYaw: spawnYaw,
       locomotionState: 'Idle',
       serverTimestamp: now,
       reconciled: false,
@@ -4166,8 +4243,11 @@ export class ZooInstanceAuthority {
     room.tickSequence += 1;
     room.lastTickAt = now;
 
+    const roomHasAnimals = resolveZoneForRoomId(roomId).hasAnimals;
     const animalSystem = this.getOrCreateAnimalSystem(roomId, now);
-    animalSystem.step(dtSeconds, now);
+    if (roomHasAnimals) {
+      animalSystem.step(dtSeconds, now);
+    }
 
     const players: SerializedPlayerState[] = [];
     for (const session of room.activeSessions.values()) {
@@ -4187,7 +4267,7 @@ export class ZooInstanceAuthority {
       serverTimestamp: now,
       visitorCount: room.activeSessions.size,
       players,
-      animals: animalSystem.getAnimals(),
+      animals: roomHasAnimals ? animalSystem.getAnimals() : [],
       habitatFeedings: animalSystem.getHabitatFeedings()
     };
   }

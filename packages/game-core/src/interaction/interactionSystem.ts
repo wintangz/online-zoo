@@ -45,6 +45,13 @@ export class InteractionSystem {
     this.registry.set(descriptor.id, descriptor);
   }
 
+  public setObjects(descriptors: InteractiveObjectDescriptor[]): void {
+    this.registry.clear();
+    for (const obj of descriptors) {
+      this.register(obj);
+    }
+  }
+
   public unregister(id: string): void {
     this.registry.delete(id);
   }

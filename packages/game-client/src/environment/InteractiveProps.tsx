@@ -4,8 +4,9 @@ import { useGLTF } from '@react-three/drei';
 import { RigidBody, CuboidCollider, CylinderCollider } from '@react-three/rapier';
 import { useStore } from 'zustand';
 import * as THREE from 'three';
-import { getAssetUrl } from '@online-zoo/game-assets';
+import { getAssetUrl, ZOO_PALETTE } from '@online-zoo/game-assets';
 import {
+  findGateLinkByObjectId,
   gameStore,
   MultiplayerClient,
   PANDA_FOREST_INTERACTIVE_OBJECTS
@@ -36,7 +37,12 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
     const st = gameStore.getState();
     if (st.phase !== 'playing' || st.focusedObject?.id !== objectId) return;
     const obj = st.focusedObject;
-    if (obj.archetype === 'info_plaque') {
+    if (obj.propReactionType === 'enter_zone_gate') {
+      const gateLink = findGateLinkByObjectId(st.currentZoneId, obj.id);
+      if (gateLink) {
+        multiplayerClient?.switchZoneViaGate(gateLink);
+      }
+    } else if (obj.archetype === 'info_plaque') {
       st.openPlaqueModal(obj);
     } else if (obj.propReactionType === 'open_food_stall') {
       st.openFoodStall(obj.id);
@@ -127,6 +133,12 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
   ) ?? {
     id: 'prop-bamboo-picnic-table',
     position: [10.8, 0, 0.8] as [number, number, number]
+  };
+  const southGateToLobbyObj = PANDA_FOREST_INTERACTIVE_OBJECTS.find(
+    (o) => o.id === 'gate-to-zoo-lobby'
+  ) ?? {
+    id: 'gate-to-zoo-lobby',
+    position: [0, 0, 22.8] as [number, number, number]
   };
 
   return (
@@ -483,6 +495,23 @@ export const InteractiveProps: React.FC<InteractivePropsProps> = ({ multiplayerC
             </mesh>
           );
         })}
+      </group>
+
+      {/* 12. South Return Gate Portal to Zoo Lobby (world-zones FR-004, FR-005) */}
+      <group
+        name="gate-to-zoo-lobby"
+        position={southGateToLobbyObj.position}
+        onClick={() => handlePropClick(southGateToLobbyObj.id)}
+      >
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+          <ringGeometry args={[1.35, 2.05, 16]} />
+          <meshStandardMaterial
+            color={ZOO_PALETTE.sunflowerGold}
+            emissive={ZOO_PALETTE.lanternAmber}
+            emissiveIntensity={0.65}
+            flatShading
+          />
+        </mesh>
       </group>
 
       {/* Floating Highlight Beacon over the Currently Targeted Interactive Object */}

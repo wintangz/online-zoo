@@ -18,6 +18,7 @@ import {
   resetMutableRuntimeState
 } from '@online-zoo/game-core';
 import { PandaForestScene } from '../environment/PandaForestScene';
+import { ZooLobbyScene } from '../environment/ZooLobbyScene';
 
 // Preload bundled GLB assets
 for (const url of getPreloadUrls()) {
@@ -77,6 +78,7 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const qualityTier = useStore(gameStore, (s) => s.settings.qualityTier);
+  const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
   const [adaptiveDpr, setAdaptiveDpr] = useState<number>(1.25);
 
   const controllers = useMemo(
@@ -102,6 +104,12 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
 
     const detachDesktop = attachDesktopInputBindings(controllers.inputController, {
       targetElement: containerRef.current
+    });
+
+    const unsubDevice = gameStore.subscribe((state, prevState) => {
+      if (state.activeDevice !== prevState.activeDevice) {
+        controllers.inputController.setActiveDevice(state.activeDevice);
+      }
     });
 
     if (enableMultiplayer) {
@@ -140,6 +148,7 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
     onReady?.();
 
     return () => {
+      unsubDevice();
       detachDesktop();
       controllers.multiplayerClient.disconnect(true);
       controllers.inputController.dispose();
@@ -171,7 +180,11 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
         />
         <Suspense fallback={null}>
           <Physics gravity={[0, -18, 0]}>
-            <PandaForestScene {...controllers} />
+            {currentZoneId === 'zoo-lobby' ? (
+              <ZooLobbyScene {...controllers} />
+            ) : (
+              <PandaForestScene {...controllers} />
+            )}
           </Physics>
         </Suspense>
       </Canvas>
