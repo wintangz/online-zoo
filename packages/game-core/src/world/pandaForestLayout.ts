@@ -170,6 +170,94 @@ export const PANDA_FOREST_INTERACTIVE_OBJECTS: InteractiveObjectDescriptor[] = [
     position: [-2.8, 0, -3.2],
     interactionRadius: 3.6,
     propReactionType: 'toggle_lantern'
+  },
+  {
+    id: 'prop-plaza-food-stall',
+    title: 'Plaza Refreshment Kiosk',
+    promptAction: 'Browse Food & Drinks',
+    archetype: 'world_prop',
+    position: [-6.8, 0, 12.2],
+    interactionRadius: 3.6,
+    propReactionType: 'open_food_stall'
+  },
+  {
+    id: 'prop-bamboo-tea-stall',
+    title: 'Bamboo Tea & Snack Stall',
+    promptAction: 'Browse Food & Drinks',
+    archetype: 'world_prop',
+    position: [11.8, 0, 5.6],
+    interactionRadius: 3.6,
+    propReactionType: 'open_food_stall'
+  },
+  {
+    id: 'prop-plaza-cafe-table',
+    title: 'Plaza Umbrella Dining Table',
+    promptAction: 'Sit at Dining Table',
+    archetype: 'world_prop',
+    position: [-3.8, 0, 12.6],
+    interactionRadius: 3.5,
+    propReactionType: 'rest_bench',
+    seats: [
+      {
+        seatIndex: 0,
+        label: 'North Seat',
+        worldPosition: [-3.8, 0.1, 11.62],
+        facingYaw: 0
+      },
+      {
+        seatIndex: 1,
+        label: 'East Seat',
+        worldPosition: [-2.82, 0.1, 12.6],
+        facingYaw: -Math.PI / 2
+      },
+      {
+        seatIndex: 2,
+        label: 'South Seat',
+        worldPosition: [-3.8, 0.1, 13.58],
+        facingYaw: Math.PI
+      },
+      {
+        seatIndex: 3,
+        label: 'West Seat',
+        worldPosition: [-4.78, 0.1, 12.6],
+        facingYaw: Math.PI / 2
+      }
+    ]
+  },
+  {
+    id: 'prop-bamboo-picnic-table',
+    title: 'Bamboo Grove Picnic Table',
+    promptAction: 'Sit at Picnic Table',
+    archetype: 'world_prop',
+    position: [10.8, 0, 0.8],
+    interactionRadius: 3.5,
+    propReactionType: 'rest_bench',
+    seats: [
+      {
+        seatIndex: 0,
+        label: 'West Front Seat',
+        worldPosition: [9.82, 0.1, 1.25],
+        facingYaw: Math.PI / 2
+      },
+      {
+        seatIndex: 1,
+        label: 'West Back Seat',
+        worldPosition: [9.82, 0.1, 0.35],
+        facingYaw: Math.PI / 2
+      },
+      {
+        seatIndex: 2,
+        label: 'East Front Seat',
+        worldPosition: [11.78, 0.1, 1.25],
+        facingYaw: -Math.PI / 2
+      },
+      {
+        seatIndex: 3,
+        label: 'East Back Seat',
+        worldPosition: [11.78, 0.1, 0.35],
+        facingYaw: -Math.PI / 2
+      }
+    ]
   }
 ];
 
@@ -213,7 +301,11 @@ export const PANDA_FOREST_OBSTACLES: SolidObstacleCollider[] = [
   { id: 'collider-prop-wind-chime', kind: 'pillar', position: [7.5, 0, -6.0], radius: 0.75, height: 2.8 },
   { id: 'collider-prop-scenic-bench', kind: 'pillar', position: [-2.5, 0, -13.0], radius: 0.5, height: 1.4 },
   { id: 'collider-prop-plaza-bench', kind: 'pillar', position: [-3.2, 0, 15.0], radius: 0.5, height: 1.4 },
-  { id: 'collider-prop-pond-chair', kind: 'pillar', position: [-0.8, 0, 1.5], radius: 0.45, height: 1.3 }
+  { id: 'collider-prop-pond-chair', kind: 'pillar', position: [-0.8, 0, 1.5], radius: 0.45, height: 1.3 },
+  { id: 'collider-prop-plaza-food-stall', kind: 'pillar', position: [-6.8, 0, 12.2], radius: 0.9, height: 2.8 },
+  { id: 'collider-prop-bamboo-tea-stall', kind: 'pillar', position: [11.8, 0, 5.6], radius: 0.9, height: 2.8 },
+  { id: 'collider-prop-plaza-cafe-table', kind: 'pillar', position: [-3.8, 0, 12.6], radius: 0.45, height: 1.4 },
+  { id: 'collider-prop-bamboo-picnic-table', kind: 'pillar', position: [10.8, 0, 0.8], radius: 0.45, height: 1.4 }
 ];
 
 export function createInitialRoomSeatStates(

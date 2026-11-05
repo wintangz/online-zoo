@@ -5,10 +5,12 @@ import { RigidBody, CapsuleCollider, type RapierRigidBody } from '@react-three/r
 import { useStore } from 'zustand';
 import * as THREE from 'three';
 import {
+  FOOD_CATALOG_BY_ID,
   gameStore,
   getOutfitColors,
   mutableRuntimeState,
-   type ActiveAvatarEmote,
+  type ActiveAvatarEmote,
+  type ActiveFoodConsumption,
   type SeatedAttachmentState
 } from '@online-zoo/game-core';
 import { AvatarVisualRig } from './AvatarVisualRig';
@@ -22,8 +24,16 @@ export function applyAvatarProceduralPose(
   leftLeg: THREE.Mesh,
   rightLeg: THREE.Mesh,
   leftArm: THREE.Mesh,
-  rightArm: THREE.Mesh
+  rightArm: THREE.Mesh,
+  activeConsumption?: ActiveFoodConsumption | null
 ): void {
+  const applyConsumptionArmPose = () => {
+    if (!activeConsumption) return;
+    const freq = activeConsumption.category === 'drink' ? 5.5 : 8.0;
+    rightArm.rotation.x = -1.62 + Math.sin(t * freq) * 0.28;
+    rightArm.rotation.z = -0.32;
+    bodyAnim.rotation.x += Math.sin(t * freq) * 0.04;
+  };
   // Reset secondary axes
   bodyAnim.rotation.y = 0;
   bodyAnim.rotation.z = 0;
@@ -50,6 +60,7 @@ export function applyAvatarProceduralPose(
       bodyAnim.position.y = -0.22 + Math.abs(Math.sin(t * 14.0)) * 0.045;
       bodyAnim.rotation.x = Math.sin(t * 14.0) * 0.1;
     }
+    applyConsumptionArmPose();
     return;
   }
 
@@ -137,6 +148,7 @@ export function applyAvatarProceduralPose(
     leftArm.rotation.x = -0.65;
     rightArm.rotation.x = -0.65;
   }
+  applyConsumptionArmPose();
 }
 
 export const PlayerAvatarEntity: React.FC = () => {
@@ -148,6 +160,7 @@ export const PlayerAvatarEntity: React.FC = () => {
   const activeSpeechBubbles = useStore(gameStore, (s) => s.social.activeSpeechBubbles);
   const localActiveEmote = useStore(gameStore, (s) => s.social.localActiveEmote);
   const localSeatedState = useStore(gameStore, (s) => s.social.localSeatedState);
+  const localActiveConsumption = useStore(gameStore, (s) => s.dining.localActiveConsumption);
 
   const activeAppearance = draftState.isOpen ? draftState.avatar : confirmedProfile.avatar;
   const activeDisplayName = confirmedProfile.isCustomized
@@ -202,7 +215,8 @@ export const PlayerAvatarEntity: React.FC = () => {
         leftLegRef.current,
         rightLegRef.current,
         leftArmRef.current,
-        rightArmRef.current
+        rightArmRef.current,
+        gameStore.getState().dining.localActiveConsumption
       );
     }
   });
@@ -248,6 +262,21 @@ export const PlayerAvatarEntity: React.FC = () => {
               </div>
             )}
 
+            {localActiveConsumption && (
+              <div
+                data-testid="local-consumption-badge"
+                data-food-item={localActiveConsumption.itemId}
+                data-food-category={localActiveConsumption.category}
+                className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-lime-300/70 bg-emerald-700/95 px-2.5 py-0.5 text-center text-[11px] font-bold leading-none text-lime-100 shadow"
+              >
+                <span>{localActiveConsumption.icon}</span>
+                <span>
+                  {FOOD_CATALOG_BY_ID[localActiveConsumption.itemId].gerundLabel}{' '}
+                  {localActiveConsumption.label}
+                </span>
+              </div>
+            )}
+
             <div
               data-testid="local-avatar-nameplate"
               data-avatar-skin={activeAppearance.skinTone}
@@ -256,6 +285,7 @@ export const PlayerAvatarEntity: React.FC = () => {
               data-avatar-outfit={activeAppearance.outfit}
               data-avatar-accessory={activeAppearance.accessory}
               data-seated-prop={localSeatedState?.objectId ?? ''}
+              data-consuming-item={localActiveConsumption?.itemId ?? ''}
               className="pointer-events-none inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-300/45 bg-emerald-950/85 px-3 py-1 text-center text-[11px] font-bold leading-none text-emerald-100 shadow-md backdrop-blur-sm"
             >
               <span
@@ -270,6 +300,7 @@ export const PlayerAvatarEntity: React.FC = () => {
         <AvatarVisualRig
           appearance={activeAppearance}
           fallbackAccentColor={localAccentColor}
+          activeConsumption={localActiveConsumption}
           bodyAnimRef={bodyAnimRef}
           leftLegRef={leftLegRef}
           rightLegRef={rightLegRef}

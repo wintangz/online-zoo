@@ -2,15 +2,18 @@ import React from 'react';
 import * as THREE from 'three';
 import {
   DEFAULT_AVATAR_APPEARANCE,
+  FOOD_CATALOG_BY_ID,
   getHairColorHex,
   getOutfitColors,
   getSkinToneHex,
+  type ActiveFoodConsumption,
   type AvatarAppearance
 } from '@online-zoo/game-core';
 
 export interface AvatarVisualRigProps {
   appearance?: AvatarAppearance;
   fallbackAccentColor?: string;
+  activeConsumption?: ActiveFoodConsumption | null;
   bodyAnimRef?: React.RefObject<THREE.Group>;
   leftLegRef?: React.RefObject<THREE.Mesh>;
   rightLegRef?: React.RefObject<THREE.Mesh>;
@@ -29,6 +32,7 @@ export interface AvatarVisualRigProps {
 export const AvatarVisualRig: React.FC<AvatarVisualRigProps> = ({
   appearance = DEFAULT_AVATAR_APPEARANCE,
   fallbackAccentColor,
+  activeConsumption,
   bodyAnimRef,
   leftLegRef,
   rightLegRef,
@@ -39,6 +43,9 @@ export const AvatarVisualRig: React.FC<AvatarVisualRigProps> = ({
   const hairHex = getHairColorHex(appearance.hairColor);
   const outfitColors = getOutfitColors(appearance.outfit);
   const accentHex = fallbackAccentColor ?? outfitColors.accent;
+  const activeFoodCatalogItem = activeConsumption
+    ? FOOD_CATALOG_BY_ID[activeConsumption.itemId]
+    : null;
 
   return (
     <group
@@ -245,6 +252,97 @@ export const AvatarVisualRig: React.FC<AvatarVisualRigProps> = ({
       <mesh ref={rightArmRef ?? null} castShadow position={[0.37, 0.9, 0]}>
         <boxGeometry args={[0.15, 0.5, 0.16]} />
         <meshStandardMaterial color={outfitColors.primary} roughness={0.72} />
+
+        {/* Handheld 3D Food or Drink Prop during Active Consumption (Feature 006) */}
+        {activeConsumption && activeFoodCatalogItem && (
+          <group
+            name="avatar-handheld-food-prop"
+            userData={{ itemId: activeConsumption.itemId, category: activeConsumption.category }}
+            position={[-0.08, -0.26, 0.16]}
+            rotation={[1.35, 0, 0]}
+          >
+            {activeConsumption.itemId === 'water' && (
+              <group>
+                <mesh castShadow>
+                  <cylinderGeometry args={[0.055, 0.055, 0.2, 12]} />
+                  <meshStandardMaterial color="#38bdf8" roughness={0.25} />
+                </mesh>
+                <mesh position={[0, 0.12, 0]}>
+                  <cylinderGeometry args={[0.03, 0.03, 0.04, 10]} />
+                  <meshStandardMaterial color="#0284c7" roughness={0.4} />
+                </mesh>
+              </group>
+            )}
+
+            {activeConsumption.itemId === 'bubble-tea' && (
+              <group>
+                <mesh castShadow>
+                  <cylinderGeometry args={[0.07, 0.052, 0.19, 14]} />
+                  <meshStandardMaterial color="#d69e66" roughness={0.45} />
+                </mesh>
+                <mesh position={[0, -0.06, 0]}>
+                  <cylinderGeometry args={[0.056, 0.053, 0.06, 14]} />
+                  <meshStandardMaterial color="#3f2314" roughness={0.6} />
+                </mesh>
+                <mesh position={[0, 0.13, 0]} rotation={[0, 0, -0.15]}>
+                  <cylinderGeometry args={[0.012, 0.012, 0.14, 8]} />
+                  <meshStandardMaterial color="#10b981" roughness={0.4} />
+                </mesh>
+              </group>
+            )}
+
+            {activeConsumption.itemId === 'ice-cream' && (
+              <group>
+                <mesh position={[0, -0.05, 0]} rotation={[Math.PI, 0, 0]} castShadow>
+                  <coneGeometry args={[0.06, 0.16, 12]} />
+                  <meshStandardMaterial color="#d97706" roughness={0.7} />
+                </mesh>
+                <mesh position={[0, 0.05, 0]} castShadow>
+                  <sphereGeometry args={[0.068, 12, 12]} />
+                  <meshStandardMaterial color="#fdf4ff" roughness={0.45} />
+                </mesh>
+                <mesh position={[0, 0.1, 0]} castShadow>
+                  <sphereGeometry args={[0.045, 10, 10]} />
+                  <meshStandardMaterial color="#451a03" roughness={0.5} />
+                </mesh>
+              </group>
+            )}
+
+            {activeConsumption.itemId === 'burger' && (
+              <group>
+                <mesh position={[0, -0.035, 0]} castShadow>
+                  <cylinderGeometry args={[0.08, 0.075, 0.035, 14]} />
+                  <meshStandardMaterial color="#d97706" roughness={0.65} />
+                </mesh>
+                <mesh position={[0, 0, 0]} castShadow>
+                  <cylinderGeometry args={[0.082, 0.082, 0.032, 14]} />
+                  <meshStandardMaterial color="#5c2d0c" roughness={0.75} />
+                </mesh>
+                <mesh position={[0, 0.022, 0]}>
+                  <cylinderGeometry args={[0.086, 0.086, 0.016, 14]} />
+                  <meshStandardMaterial color="#22c55e" roughness={0.6} />
+                </mesh>
+                <mesh position={[0, 0.048, 0]} castShadow>
+                  <sphereGeometry args={[0.08, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+                  <meshStandardMaterial color="#d97706" roughness={0.6} />
+                </mesh>
+              </group>
+            )}
+
+            {activeConsumption.itemId === 'popcorn' && (
+              <group>
+                <mesh castShadow>
+                  <cylinderGeometry args={[0.072, 0.055, 0.16, 12]} />
+                  <meshStandardMaterial color="#ef4444" roughness={0.55} />
+                </mesh>
+                <mesh position={[0, 0.09, 0]} castShadow>
+                  <sphereGeometry args={[0.07, 10, 10]} />
+                  <meshStandardMaterial color="#fef08a" roughness={0.65} />
+                </mesh>
+              </group>
+            )}
+          </group>
+        )}
       </mesh>
     </group>
   );

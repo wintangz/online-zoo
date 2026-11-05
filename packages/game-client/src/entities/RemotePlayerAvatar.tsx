@@ -5,6 +5,7 @@ import { useStore } from 'zustand';
 import * as THREE from 'three';
 import {
   DEFAULT_AVATAR_APPEARANCE,
+  FOOD_CATALOG_BY_ID,
   gameStore,
   mutableRuntimeState,
   type AvatarAppearance
@@ -42,6 +43,13 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
     gameStore,
     (s) => s.social.remoteActiveEmotes[sessionId] ?? s.multiplayer.remoteVisitors[sessionId]?.activeEmote ?? null
   );
+  const remoteActiveConsumption = useStore(
+    gameStore,
+    (s) =>
+      s.dining.remoteActiveConsumptions[sessionId] ??
+      s.multiplayer.remoteVisitors[sessionId]?.activeConsumption ??
+      null
+  );
   const mutedPlayerIds = useStore(gameStore, (s) => s.social.mutedPlayerIds);
   const blockedPlayerIds = useStore(gameStore, (s) => s.social.blockedPlayerIds);
 
@@ -54,6 +62,7 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
 
   const visibleSpeechBubble = isSuppressed ? undefined : remoteSpeechBubble;
   const visibleEmote = isSuppressed ? null : remoteActiveEmote;
+  const visibleConsumption = isSuppressed ? null : remoteActiveConsumption;
   const seatedOn = remoteVisitor?.seatedOn ?? null;
 
   const visualGroupRef = useRef<THREE.Group>(null);
@@ -78,6 +87,10 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
     const storeEmote =
       gameStore.getState().social.remoteActiveEmotes[sessionId] ??
       storeVisitor?.activeEmote ??
+      null;
+    const storeConsumption =
+      gameStore.getState().dining.remoteActiveConsumptions[sessionId] ??
+      storeVisitor?.activeConsumption ??
       null;
     const storeSeated = storeVisitor?.seatedOn ?? null;
 
@@ -115,7 +128,8 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
         leftLegRef.current,
         rightLegRef.current,
         leftArmRef.current,
-        rightArmRef.current
+        rightArmRef.current,
+        isSuppressed ? null : storeConsumption
       );
     }
   });
@@ -154,6 +168,21 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
             </div>
           )}
 
+          {visibleConsumption && (
+            <div
+              data-testid={`remote-consumption-badge-${sessionId}`}
+              data-food-item={visibleConsumption.itemId}
+              data-food-category={visibleConsumption.category}
+              className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-lime-300/70 bg-emerald-700/95 px-2.5 py-0.5 text-center text-[11px] font-bold leading-none text-lime-100 shadow"
+            >
+              <span>{visibleConsumption.icon}</span>
+              <span>
+                {FOOD_CATALOG_BY_ID[visibleConsumption.itemId].gerundLabel}{' '}
+                {visibleConsumption.label}
+              </span>
+            </div>
+          )}
+
           <div
             data-testid={`remote-avatar-3d-badge-${sessionId}`}
             data-avatar-skin={avatar.skinTone}
@@ -162,6 +191,7 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
             data-avatar-outfit={avatar.outfit}
             data-avatar-accessory={avatar.accessory}
             data-seated-prop={seatedOn?.objectId ?? ''}
+            data-consuming-item={visibleConsumption?.itemId ?? ''}
             className="pointer-events-none inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/30 bg-emerald-950/85 px-3 py-1 text-center text-[11px] font-bold leading-none text-white shadow-md backdrop-blur-sm"
           >
             <span
@@ -176,6 +206,7 @@ export const RemotePlayerAvatar: React.FC<RemotePlayerAvatarProps> = ({
       <AvatarVisualRig
         appearance={avatar}
         fallbackAccentColor={accentColor}
+        activeConsumption={visibleConsumption}
         bodyAnimRef={bodyAnimRef}
         leftLegRef={leftLegRef}
         rightLegRef={rightLegRef}

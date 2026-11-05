@@ -13,10 +13,11 @@ export const InteractionPromptBanner: React.FC<InteractionPromptBannerProps> = (
   const focusedObject = useStore(gameStore, (s) => s.focusedObject);
   const activeDevice = useStore(gameStore, (s) => s.activeDevice);
   const activePlaqueModal = useStore(gameStore, (s) => s.activePlaqueModal);
+  const activeStallId = useStore(gameStore, (s) => s.dining.activeStallId);
   const seatStates = useStore(gameStore, (s) => s.social.seatStates);
   const localSeatedState = useStore(gameStore, (s) => s.social.localSeatedState);
 
-  if (phase !== 'playing' || activePlaqueModal) {
+  if (phase !== 'playing' || activePlaqueModal || activeStallId) {
     return null;
   }
 
@@ -82,6 +83,10 @@ export const InteractionPromptBanner: React.FC<InteractionPromptBannerProps> = (
 
   const handleActivate = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
+    if (focusedObject.propReactionType === 'open_food_stall') {
+      gameStore.getState().openFoodStall(focusedObject.id);
+      return;
+    }
     if (totalSeats > 0 && typeof window !== 'undefined') {
       const w = window as unknown as {
         __ONLINE_ZOO_RUNTIME__?: {
