@@ -1117,6 +1117,26 @@ let globalSessionCounter = 0;
 let globalMessageCounter = 0;
 let globalFriendReqCounter = 0;
 let globalReportCounter = 0;
+let globalFeedbackCounter = 0;
+let globalErrorCounter = 0;
+const serverStartedAt = Date.now();
+const PUBLIC_BETA_VERSION = '0.10.0-beta';
+const VALID_BETA_FEEDBACK_CATEGORIES = new Set([
+  'bug',
+  'performance',
+  'usability',
+  'suggestion',
+  'safety'
+]);
+const VALID_BETA_FEEDBACK_SEVERITIES = new Set(['low', 'medium', 'high']);
+/** @type {any[]} */
+const betaFeedbackItems = [];
+/** @type {Map<string, number[]>} */
+const feedbackTimestampsBySession = new Map();
+/** @type {any[]} */
+const diagnosticErrors = [];
+/** @type {any} */
+let maintenanceNotice = null;
 
 /** @param {string} playerId */
 function getOrCreateFriendSet(playerId) {
@@ -1780,12 +1800,107 @@ function buildSocialPresenceMessage(playerId, now = Date.now()) {
   };
 }
 
+/**
+ * @param {'client' | 'server'} _source
+ * @param {string} code
+ * @param {string} message
+ * @param {{ playerId?: string; roomId?: string }} [context]
+ * @param {number} [now]
+ */
+function recordDiagnosticErrorServer(_source, code, message, context = {}, now = Date.now()) {
+  globalErrorCounter += 1;
+  const entry = {
+    errorId: `err_${globalErrorCounter}_${now}`,
+    code,
+    message: String(message || '').slice(0, 200),
+    roomId: context.roomId || null,
+    playerId: context.playerId || null,
+    timestamp: now
+  };
+  diagnosticErrors.push(entry);
+  if (diagnosticErrors.length > 50) {
+    diagnosticErrors.splice(0, diagnosticErrors.length - 50);
+  }
+  return entry;
+}
+
+function getOpsHealthSnapshotServer(now = Date.now()) {
+  const instances = getAvailableInstancesServer();
+  let totalVisitors = 0;
+  let healthyInstances = 0;
+  let unhealthyInstances = 0;
+  for (const inst of instances) {
+    totalVisitors += inst.visitorCount;
+    if (inst.status === 'healthy') healthyInstances += 1;
+    else unhealthyInstances += 1;
+  }
+  const openReportsCount = moderationReports.filter(
+    /** @param {any} r */ (r) => r.status !== 'resolved' && r.status !== 'dismissed'
+  ).length;
+  const status = unhealthyInstances > 0 ? 'degraded' : 'ok';
+  return {
+    version: PUBLIC_BETA_VERSION,
+    status,
+    uptimeMs: Math.max(0, now - serverStartedAt),
+    totalVisitors,
+    healthyInstances,
+    unhealthyInstances,
+    openReportsCount,
+    totalReportsCount: moderationReports.length,
+    feedbackCount: betaFeedbackItems.length,
+    recentErrorsCount: diagnosticErrors.length,
+    reports: moderationReports
+      .slice(-25)
+      .reverse()
+      .map(/** @param {any} r */ (r) => ({ ...r })),
+    feedbackItems: betaFeedbackItems
+      .slice(-25)
+      .reverse()
+      .map(/** @param {any} f */ (f) => ({
+        ...f,
+        diagnostics: { ...f.diagnostics }
+      })),
+    recentErrors: diagnosticErrors
+      .slice(-25)
+      .reverse()
+      .map(/** @param {any} e */ (e) => ({ ...e })),
+    maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null,
+    serverTimestamp: now
+  };
+}
+
+function buildOpsSnapshotMessageServer(now = Date.now()) {
+  return {
+    type: 'ops_snapshot',
+    snapshot: getOpsHealthSnapshotServer(now)
+  };
+}
+
+function broadcastOpsToAllServer(now = Date.now()) {
+  const msg = buildOpsSnapshotMessageServer(now);
+  for (const b of bindings) {
+    if (b.sessionId && b.ws.readyState === WebSocket.OPEN) {
+      sendJson(b.ws, msg);
+    }
+  }
+}
+
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 await app.prepare();
 
 const httpServer = createServer((req, res) => {
+  const pathname = (req.url || '/').split('?')[0];
+  if (req.method === 'GET' && pathname === '/api/health') {
+    const health = getOpsHealthSnapshotServer(Date.now());
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    res.end(JSON.stringify(health));
+    return;
+  }
   handle(req, res);
 });
 
@@ -2197,7 +2312,8 @@ wss.on('connection', (ws, req) => {
           inventory: { ...wallet.inventory }
         },
         passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
-        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom),
+        maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null
       });
 
       broadcastToRoom(
@@ -2793,7 +2909,8 @@ wss.on('connection', (ws, req) => {
           inventory: { ...wallet.inventory }
         },
         passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
-        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom),
+        maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null
       });
 
       broadcastToRoom(
@@ -2931,7 +3048,8 @@ wss.on('connection', (ws, req) => {
           inventory: { ...wallet.inventory }
         },
         passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
-        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom),
+        maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null
       });
 
       broadcastToRoom(
@@ -3091,7 +3209,8 @@ wss.on('connection', (ws, req) => {
               inventory: { ...wallet.inventory }
             },
             passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
-            zooEvents: buildRoomEventsSnapshotServer(destRoom)
+            zooEvents: buildRoomEventsSnapshotServer(destRoom),
+            maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null
           };
 
           for (const b of bindings) {
@@ -3171,13 +3290,142 @@ wss.on('connection', (ws, req) => {
           text: m.text,
           createdAt: m.createdAt
         })),
-        createdAt: new Date(now).toISOString()
+        createdAt: new Date(now).toISOString(),
+        status: 'open',
+        resolvedAt: null
       };
       moderationReports.push(report);
       sendJson(ws, {
         type: 'report_submitted_ack',
         report
       });
+      broadcastOpsToAllServer(now);
+    } else if (parsed.type === 'submit_beta_feedback') {
+      if (!binding.sessionId) return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const recentTs = (feedbackTimestampsBySession.get(session.sessionId) || []).filter(
+        /** @param {number} ts */ (ts) => now - ts < 60000
+      );
+      if (recentTs.length >= 5) {
+        feedbackTimestampsBySession.set(session.sessionId, recentTs);
+        recordDiagnosticErrorServer(
+          'client',
+          'FEEDBACK_RATE_LIMITED',
+          'Beta feedback rate limit exceeded.',
+          { playerId: session.playerId, roomId: room.roomId },
+          now
+        );
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'FEEDBACK_RATE_LIMITED',
+          message: 'Please wait a moment before submitting additional beta feedback.'
+        });
+        return;
+      }
+
+      const cleanMsg = String(parsed.message || '')
+        .replace(/[\u0000-\u001F\u007F]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const validCat = VALID_BETA_FEEDBACK_CATEGORIES.has(parsed.category);
+      const validSev = VALID_BETA_FEEDBACK_SEVERITIES.has(parsed.severity);
+      if (cleanMsg.length < 5 || cleanMsg.length > 500 || !validCat || !validSev) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'Beta feedback message must be between 5 and 500 characters.'
+        });
+        return;
+      }
+
+      recentTs.push(now);
+      feedbackTimestampsBySession.set(session.sessionId, recentTs);
+      globalFeedbackCounter += 1;
+      const diag = parsed.diagnostics && typeof parsed.diagnostics === 'object' ? parsed.diagnostics : {};
+      const feedback = {
+        feedbackId: `fb_${globalFeedbackCounter}_${now}`,
+        playerId: session.playerId,
+        displayName: session.displayName,
+        roomId: room.roomId,
+        category: parsed.category,
+        severity: parsed.severity,
+        message: cleanMsg,
+        createdAt: now,
+        diagnostics: {
+          playerId: session.playerId,
+          roomId: room.roomId,
+          fps: Number.isFinite(Number(diag.fps)) ? Math.round(Number(diag.fps)) : 60,
+          avgFrameTimeMs: Number.isFinite(Number(diag.avgFrameTimeMs))
+            ? Number(Number(diag.avgFrameTimeMs).toFixed(1))
+            : 16.7,
+          qualityPreset: ['auto', 'low', 'medium', 'high'].includes(diag.qualityPreset)
+            ? diag.qualityPreset
+            : 'auto',
+          viewport: String(diag.viewport || '1280x720').slice(0, 32),
+          inputMode: diag.inputMode === 'touch' ? 'touch' : 'desktop',
+          visitorCount: room.activeSessions.size,
+          userAgentSummary: String(diag.userAgentSummary || 'Browser Client').slice(0, 80)
+        }
+      };
+      betaFeedbackItems.push(feedback);
+      if (betaFeedbackItems.length > 50) {
+        betaFeedbackItems.splice(0, betaFeedbackItems.length - 50);
+      }
+      sendJson(ws, {
+        type: 'beta_feedback_ack',
+        feedback,
+        confirmationMessage:
+          'Thank you! Your beta feedback and diagnostic snapshot have been recorded.'
+      });
+      broadcastOpsToAllServer(now);
+    } else if (parsed.type === 'resolve_player_report') {
+      if (!binding.sessionId || typeof parsed.reportId !== 'string') return;
+      const resolution = parsed.resolution || parsed.status;
+      if (resolution !== 'resolved' && resolution !== 'dismissed') return;
+      const rep = moderationReports.find(
+        /** @param {any} r */ (r) => r.reportId === parsed.reportId.trim()
+      );
+      if (!rep) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'Report ID not found.'
+        });
+        return;
+      }
+      rep.status = resolution;
+      rep.resolvedAt = new Date(now).toISOString();
+      broadcastOpsToAllServer(now);
+    } else if (parsed.type === 'set_maintenance_notice') {
+      if (!binding.sessionId || typeof parsed.active !== 'boolean') return;
+      const cleanMessage = String(parsed.message || '')
+        .replace(/[\u0000-\u001F\u007F]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 240);
+      if (parsed.active && cleanMessage.length < 3) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'Maintenance message must be at least 3 characters when active.'
+        });
+        return;
+      }
+      maintenanceNotice = parsed.active
+        ? {
+            active: true,
+            severity: parsed.severity === 'warning' ? 'warning' : 'info',
+            message: cleanMessage,
+            updatedAt: now
+          }
+        : null;
+      broadcastOpsToAllServer(now);
+    } else if (parsed.type === 'request_ops_snapshot') {
+      if (!binding.sessionId) return;
+      sendJson(ws, buildOpsSnapshotMessageServer(now));
     } else if (parsed.type === 'trigger_animal_feeding') {
       if (!binding.sessionId || typeof parsed.habitatId !== 'string') return;
       const room = rooms.get(binding.roomId);

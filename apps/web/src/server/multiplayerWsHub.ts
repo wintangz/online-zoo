@@ -100,6 +100,14 @@ export function attachMultiplayerWebSocketServer(
     }
   };
 
+  const broadcastOpsToAll = (msg: ServerMultiplayerMessage) => {
+    for (const b of bindings) {
+      if (b.sessionId && b.ws.readyState === WebSocket.OPEN) {
+        sendJson(b.ws, msg);
+      }
+    }
+  };
+
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const rawUrl = req.url ?? '/';
     const pathname = rawUrl.split('?')[0];
@@ -450,6 +458,7 @@ export function attachMultiplayerWebSocketServer(
           const repRes = authority.submitPlayerReport(binding.sessionId, msg);
           if (repRes.accepted && repRes.ack) {
             sendJson(ws, repRes.ack);
+            broadcastOpsToAll(authority.buildOpsSnapshotMessage());
           } else {
             sendJson(ws, {
               type: 'error_notice',
@@ -457,6 +466,60 @@ export function attachMultiplayerWebSocketServer(
               message: repRes.errorMessage ?? 'Could not submit player report.'
             });
           }
+          break;
+        }
+
+        case 'submit_beta_feedback': {
+          if (!binding.sessionId) return;
+          const fbRes = authority.submitBetaFeedback(binding.sessionId, msg);
+          if (fbRes.accepted && fbRes.ack) {
+            sendJson(ws, fbRes.ack);
+            if (fbRes.opsUpdate) {
+              broadcastOpsToAll(fbRes.opsUpdate);
+            }
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: fbRes.errorCode ?? 'INVALID_PAYLOAD',
+              message: fbRes.errorMessage ?? 'Could not submit beta feedback.'
+            });
+          }
+          break;
+        }
+
+        case 'resolve_player_report': {
+          if (!binding.sessionId) return;
+          const resRep = authority.resolvePlayerReport(binding.sessionId, msg);
+          if (resRep.accepted && resRep.opsUpdate) {
+            broadcastOpsToAll(resRep.opsUpdate);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: resRep.errorCode ?? 'INVALID_PAYLOAD',
+              message: resRep.errorMessage ?? 'Could not update player report.'
+            });
+          }
+          break;
+        }
+
+        case 'set_maintenance_notice': {
+          if (!binding.sessionId) return;
+          const mRes = authority.setMaintenanceNotice(binding.sessionId, msg);
+          if (mRes.accepted && mRes.opsUpdate) {
+            broadcastOpsToAll(mRes.opsUpdate);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_PAYLOAD',
+              message: 'Could not update maintenance notice.'
+            });
+          }
+          break;
+        }
+
+        case 'request_ops_snapshot': {
+          if (!binding.sessionId) return;
+          sendJson(ws, authority.buildOpsSnapshotMessage());
           break;
         }
 

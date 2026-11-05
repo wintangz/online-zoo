@@ -1,4 +1,6 @@
 import type {
+  BetaFeedbackCategory,
+  BetaFeedbackSeverity,
   EmoteId,
   LocomotionState,
   PlayerIdentityProfile,
@@ -6,6 +8,7 @@ import type {
   ReportReason,
   ZooInstanceHealthStatus
 } from '../types';
+import { validateBetaFeedbackInput } from '../readiness';
 import { validateChatMessage } from '../social/chatModeration';
 import { getEmoteDescriptor, isValidEmoteId } from '../social/emoteCatalog';
 import { gameStore, mutableRuntimeState } from '../state/gameStore';
@@ -650,6 +653,60 @@ export class InMemoryMultiplayerHub {
         break;
       }
 
+      case 'submit_beta_feedback': {
+        if (!conn.sessionId) return;
+        const fbRes = this.authority.submitBetaFeedback(conn.sessionId, msg);
+        if (fbRes.accepted && fbRes.ack) {
+          conn.deliverToClient(fbRes.ack);
+          if (fbRes.opsUpdate) {
+            for (const targetConn of this.connections.values()) {
+              if (targetConn.sessionId) {
+                targetConn.deliverToClient(fbRes.opsUpdate);
+              }
+            }
+          }
+        } else {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code: fbRes.errorCode ?? 'INVALID_PAYLOAD',
+            message: fbRes.errorMessage ?? 'Unable to submit beta feedback.'
+          });
+        }
+        break;
+      }
+
+      case 'resolve_player_report': {
+        if (!conn.sessionId) return;
+        const resRep = this.authority.resolvePlayerReport(conn.sessionId, msg);
+        if (resRep.accepted && resRep.opsUpdate) {
+          for (const targetConn of this.connections.values()) {
+            if (targetConn.sessionId) {
+              targetConn.deliverToClient(resRep.opsUpdate);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'set_maintenance_notice': {
+        if (!conn.sessionId) return;
+        const maintRes = this.authority.setMaintenanceNotice(conn.sessionId, msg);
+        if (maintRes.accepted && maintRes.opsUpdate) {
+          for (const targetConn of this.connections.values()) {
+            if (targetConn.sessionId) {
+              targetConn.deliverToClient(maintRes.opsUpdate);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'request_ops_snapshot': {
+        if (!conn.sessionId) return;
+        conn.deliverToClient(this.authority.buildOpsSnapshotMessage());
+        break;
+      }
+
       case 'ping': {
         if (conn.sessionId) {
           this.authority.recordHeartbeat(conn.sessionId);
@@ -1198,6 +1255,10 @@ export class MultiplayerClient {
           store.applyZooEventsSnapshot(parsed.zooEvents);
         }
 
+        if (parsed.maintenanceNotice !== undefined) {
+          store.setMaintenanceNotice(parsed.maintenanceNotice);
+        }
+
         store.updateMultiplayerState({
           status: 'connected',
           roomId: parsed.roomId,
@@ -1482,7 +1543,22 @@ export class MultiplayerClient {
         break;
       }
 
+      case 'beta_feedback_ack': {
+        store.setBetaFeedbackNotice({
+          type: 'success',
+          message: parsed.confirmationMessage,
+          timestamp: parsed.feedback.createdAt
+        });
+        break;
+      }
+
+      case 'ops_snapshot': {
+        store.setOpsSnapshot(parsed.snapshot);
+        break;
+      }
+
       case 'error_notice': {
+        store.recordClientError(parsed.code, parsed.message);
         if (
           parsed.code === 'CHAT_RATE_LIMITED' ||
           parsed.code === 'CHAT_MODERATION_BLOCKED'
@@ -1504,6 +1580,12 @@ export class MultiplayerClient {
             type: 'error',
             message: parsed.message,
             code: parsed.code,
+            timestamp: now
+          });
+        } else if (parsed.code === 'FEEDBACK_RATE_LIMITED') {
+          store.setBetaFeedbackNotice({
+            type: 'error',
+            message: parsed.message,
             timestamp: now
           });
         } else if (
@@ -2174,6 +2256,124 @@ export class MultiplayerClient {
         ? { eventPatches: sanitized.eventPatches }
         : {})
     });
+  }
+
+  /**
+   * Submits structured player Beta Feedback with diagnostic metadata (`FR-007`, `SC-004`).
+   */
+  public submitBetaFeedback(params: {
+    category: BetaFeedbackCategory;
+    severity: BetaFeedbackSeverity;
+    message: string;
+  }): { valid: boolean; errorMessage?: string } {
+    const store = gameStore.getState();
+    const validated = validateBetaFeedbackInput(params);
+    if (!validated.valid || !validated.category || !validated.severity || !validated.normalizedMessage) {
+      const errMsg = validated.errorMessage ?? 'Invalid feedback submission.';
+      store.setBetaFeedbackNotice({
+        type: 'error',
+        message: errMsg
+      });
+      return { valid: false, errorMessage: errMsg };
+    }
+
+    const viewport =
+      typeof window !== 'undefined'
+        ? `${window.innerWidth}x${window.innerHeight}`
+        : '1280x800';
+    const userAgentSummary =
+      typeof navigator !== 'undefined' && navigator.userAgent
+        ? navigator.userAgent.slice(0, 80)
+        : 'Browser Client';
+
+    const diagnostics = {
+      playerId: store.identity.profile.playerId,
+      roomId: store.multiplayer.roomId,
+      fps: store.betaReadiness.telemetry.fps,
+      avgFrameTimeMs: store.betaReadiness.telemetry.avgFrameTimeMs,
+      qualityPreset: store.settings.qualityTier,
+      viewport,
+      inputMode: store.activeDevice,
+      visitorCount: store.multiplayer.visitorCount,
+      userAgentSummary
+    };
+
+    if (store.multiplayer.status !== 'connected') {
+      store.setBetaFeedbackNotice({
+        type: 'success',
+        message: 'Thank you! Beta feedback has been recorded locally with device diagnostics.'
+      });
+      return { valid: true };
+    }
+
+    this.sendRaw({
+      type: 'submit_beta_feedback',
+      category: validated.category,
+      severity: validated.severity,
+      message: validated.normalizedMessage,
+      diagnostics
+    });
+    return { valid: true };
+  }
+
+  /**
+   * Resolves or dismisses a player safety report (`FR-010`, `SC-005`).
+   */
+  public resolvePlayerReport(
+    reportId: string,
+    resolution: 'resolved' | 'dismissed'
+  ): void {
+    const trimmed = reportId.trim();
+    if (!trimmed) return;
+    if (gameStore.getState().multiplayer.status === 'connected') {
+      this.sendRaw({
+        type: 'resolve_player_report',
+        reportId: trimmed,
+        resolution
+      });
+    }
+  }
+
+  /**
+   * Broadcasts or clears a non-disruptive operator maintenance notice (`FR-010`, `SC-005`).
+   */
+  public setMaintenanceNotice(params: {
+    active: boolean;
+    message?: string;
+    severity?: 'info' | 'warning';
+  }): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.setMaintenanceNotice(
+        params.active
+          ? {
+              active: true,
+              message:
+                params.message?.trim() ||
+                'Scheduled Public Beta update in progress — your Zoo Passport and Coins are safely auto-saved.',
+              severity: params.severity ?? 'info',
+              updatedAt: Date.now()
+            }
+          : null
+      );
+      return;
+    }
+
+    this.sendRaw({
+      type: 'set_maintenance_notice',
+      active: params.active,
+      ...(params.message !== undefined ? { message: params.message } : {}),
+      ...(params.severity !== undefined ? { severity: params.severity } : {})
+    });
+  }
+
+  /**
+   * Requests an updated `ops_snapshot` from the server authority (`FR-009`, `SC-005`).
+   */
+  public requestOpsSnapshot(): void {
+    if (gameStore.getState().multiplayer.status === 'connected') {
+      this.sendRaw({ type: 'request_ops_snapshot' });
+    }
   }
 
   public stepFrame(dt: number, now?: number): void {

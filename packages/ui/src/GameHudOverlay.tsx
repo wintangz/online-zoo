@@ -28,6 +28,8 @@ export const GameHudOverlay: React.FC = () => {
   const zooEventsMap = useStore(gameStore, (s) => s.events.events);
   const seasonalTheme = useStore(gameStore, (s) => s.events.seasonalTheme);
   const isEventsModalOpen = useStore(gameStore, (s) => s.events.isEventsModalOpen);
+  const isHelpCenterOpen = useStore(gameStore, (s) => s.betaReadiness.isHelpCenterOpen);
+  const maintenanceNotice = useStore(gameStore, (s) => s.betaReadiness.maintenanceNotice);
   const setPhase = useStore(gameStore, (s) => s.setPhase);
   const setCursorState = useStore(gameStore, (s) => s.setCursorState);
   const openAvatarCustomizer = useStore(gameStore, (s) => s.openAvatarCustomizer);
@@ -38,6 +40,7 @@ export const GameHudOverlay: React.FC = () => {
   const closeFoodStall = useStore(gameStore, (s) => s.closeFoodStall);
   const setPassportOpen = useStore(gameStore, (s) => s.setPassportOpen);
   const setEventsModalOpen = useStore(gameStore, (s) => s.setEventsModalOpen);
+  const setHelpCenterOpen = useStore(gameStore, (s) => s.setHelpCenterOpen);
   const [hudCopied, setHudCopied] = useState(false);
 
   const discoveredSpeciesCount = Object.values(encyclopedia.entries).filter(
@@ -147,6 +150,12 @@ export const GameHudOverlay: React.FC = () => {
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusConfig.dotClass}`} />
             <span className="whitespace-nowrap text-sm font-bold leading-none tracking-wide">
               Panda Forest
+            </span>
+            <span
+              data-testid="hud-beta-badge"
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-amber-300/45 bg-amber-400/20 px-2 py-0.5 text-center text-[11px] font-extrabold uppercase leading-none text-amber-200"
+            >
+              Public Beta
             </span>
             <span className="text-xs leading-none text-emerald-300/80">|</span>
 
@@ -386,6 +395,18 @@ export const GameHudOverlay: React.FC = () => {
 
             <button
               type="button"
+              data-testid="hud-help-beta-btn"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setHelpCenterOpen(!isHelpCenterOpen);
+              }}
+              className="pointer-events-auto inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl border border-amber-300/60 bg-emerald-950/90 px-4 py-2.5 text-center text-xs font-extrabold leading-none text-amber-200 shadow-lg backdrop-blur-md transition hover:bg-emerald-900"
+            >
+              <span>? Help &amp; Beta</span>
+            </button>
+
+            <button
+              type="button"
               data-testid="open-settings-btn"
               onClick={handleOpenMenu}
               className="pointer-events-auto inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-2xl border border-white/25 bg-emerald-950/80 px-4 py-2.5 text-center text-xs font-bold leading-none text-white shadow-lg backdrop-blur-md transition hover:bg-emerald-900"
@@ -397,6 +418,25 @@ export const GameHudOverlay: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Non-Disruptive Live Maintenance & Release Banner (FR-015, SC-005) */}
+        {maintenanceNotice?.active && (
+          <div
+            data-testid="hud-maintenance-banner"
+            className={`pointer-events-auto flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2 text-xs font-bold shadow-lg backdrop-blur-md ${
+              maintenanceNotice.severity === 'warning'
+                ? 'border-amber-300/60 bg-amber-950/90 text-amber-100'
+                : 'border-sky-300/50 bg-sky-950/90 text-sky-100'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="rounded-lg bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-950">
+                {maintenanceNotice.severity === 'warning' ? 'Maintenance Notice' : 'Sanctuary Update'}
+              </span>
+              <span>{maintenanceNotice.message}</span>
+            </div>
+          </div>
+        )}
 
         {/* Active Remote Visitors Strip (FR-009, FR-024) */}
         {remoteVisitorList.length > 0 && (

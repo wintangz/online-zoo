@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
-import { gameStore } from '@online-zoo/game-core';
+import { gameStore, PUBLIC_BETA_VERSION } from '@online-zoo/game-core';
 
 export interface EntryLoadingScreenProps {
   onEnterWorld?: () => void;
@@ -38,8 +38,16 @@ export const EntryLoadingScreen: React.FC<EntryLoadingScreenProps> = ({ onEnterW
       className="fixed inset-0 z-50 flex select-none flex-col items-center justify-center bg-gradient-to-b from-emerald-950/95 via-emerald-900/90 to-teal-950/95 px-6 text-white backdrop-blur-md"
     >
       <div className="w-full max-w-lg rounded-3xl border border-emerald-400/30 bg-emerald-950/80 p-8 text-center shadow-2xl">
-        <div className="mb-3 inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500/20 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-300">
-          <span>Online Zoo • Panda Forest</span>
+        <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
+          <div className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500/20 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-300">
+            <span>Online Zoo • Panda Forest</span>
+          </div>
+          <span
+            data-testid="entry-beta-badge"
+            className="inline-flex items-center justify-center rounded-full border border-amber-300/45 bg-amber-400/20 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-amber-200"
+          >
+            Public Beta v{PUBLIC_BETA_VERSION}
+          </span>
         </div>
 
         <h1 className="text-center text-3xl font-extrabold tracking-tight text-white sm:text-4xl">

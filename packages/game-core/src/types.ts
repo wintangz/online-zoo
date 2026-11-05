@@ -432,6 +432,8 @@ export type ReportReason =
   | 'offensive-name'
   | 'other';
 
+export type PlayerReportStatus = 'open' | 'resolved' | 'dismissed';
+
 export interface PlayerModerationReport {
   reportId: string;
   reporterPlayerId: string;
@@ -450,6 +452,8 @@ export interface PlayerModerationReport {
     createdAt: number;
   }>;
   createdAt: string;
+  status?: PlayerReportStatus;
+  resolvedAt?: number | null;
 }
 
 export interface PersistedSocialProfile {
@@ -626,6 +630,113 @@ export interface EventsStoreSlice {
     timestamp: number;
   } | null;
 }
+
+// ============================================================================
+// Feature 010: Public Beta & Production Readiness Types
+// ============================================================================
+
+export type BetaFeedbackCategory =
+  | 'bug'
+  | 'performance'
+  | 'usability'
+  | 'suggestion'
+  | 'safety';
+
+export type BetaFeedbackSeverity = 'low' | 'medium' | 'high';
+
+export type HelpCenterTabId = 'controls' | 'feedback' | 'ops';
+
+export interface BetaDiagnosticContext {
+  playerId: string;
+  roomId: string;
+  fps: number;
+  avgFrameTimeMs: number;
+  qualityPreset: QualityTier;
+  viewport: string;
+  inputMode: 'desktop' | 'touch';
+  visitorCount: number;
+  userAgentSummary: string;
+}
+
+export interface BetaFeedbackRecord {
+  feedbackId: string;
+  playerId: string;
+  displayName: string;
+  roomId: string;
+  category: BetaFeedbackCategory;
+  severity: BetaFeedbackSeverity;
+  message: string;
+  diagnostics: BetaDiagnosticContext;
+  createdAt: number;
+}
+
+export interface MaintenanceNoticeState {
+  active: boolean;
+  message: string;
+  severity: 'info' | 'warning';
+  updatedAt: number;
+}
+
+export interface DiagnosticErrorEntry {
+  errorId: string;
+  code: string;
+  message: string;
+  roomId: string | null;
+  playerId: string | null;
+  timestamp: number;
+}
+
+export interface OpsHealthSnapshot {
+  version: string;
+  status: 'ok' | 'degraded';
+  uptimeMs: number;
+  totalVisitors: number;
+  healthyInstances: number;
+  unhealthyInstances: number;
+  openReportsCount: number;
+  totalReportsCount: number;
+  feedbackCount: number;
+  recentErrorsCount: number;
+  reports: PlayerModerationReport[];
+  feedbackItems: BetaFeedbackRecord[];
+  recentErrors: DiagnosticErrorEntry[];
+  maintenanceNotice: MaintenanceNoticeState | null;
+  serverTimestamp: number;
+}
+
+export interface PerformanceTelemetrySnapshot {
+  fps: number;
+  avgFrameTimeMs: number;
+  p95FrameTimeMs: number;
+  lowFpsStreak: number;
+  autoDowngradedCount: number;
+}
+
+export interface PersistedBetaReadinessState {
+  schemaVersion: 1;
+  hasCompletedOnboarding: boolean;
+  autoQualityAdjust: boolean;
+  lastSeenVersion: string;
+}
+
+export interface BetaReadinessStoreSlice {
+  version: string;
+  hasCompletedOnboarding: boolean;
+  isOnboardingOpen: boolean;
+  isHelpCenterOpen: boolean;
+  activeTab: HelpCenterTabId;
+  autoQualityAdjust: boolean;
+  telemetry: PerformanceTelemetrySnapshot;
+  feedbackNotice: {
+    type: 'success' | 'error';
+    message: string;
+    timestamp: number;
+  } | null;
+  maintenanceNotice: MaintenanceNoticeState | null;
+  opsSnapshot: OpsHealthSnapshot | null;
+  clientErrors: DiagnosticErrorEntry[];
+}
+
 
 
 

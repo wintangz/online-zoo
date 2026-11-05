@@ -6,6 +6,7 @@ import { InputController } from '@online-zoo/game-core';
 import {
   AnimalSimulationOverlay,
   AvatarCustomizerModal,
+  BetaReadinessOverlay,
   EntryLoadingScreen,
   EventsAndActivitiesOverlay,
   FoodAndDiningOverlay,
@@ -48,6 +49,7 @@ export const ZooWorldExperience: React.FC = () => {
       <InfoPlaqueModal />
       <SettingsMenuModal />
       <AvatarCustomizerModal />
+      <BetaReadinessOverlay />
     </main>
   );
 };

@@ -2,10 +2,15 @@ import type {
   ActiveAvatarEmote,
   ActiveFoodConsumption,
   AvatarAppearance,
+  BetaDiagnosticContext,
+  BetaFeedbackRecord,
+  DiagnosticErrorEntry,
   EventErrorCode,
   FriendRequestRecord,
   FriendStatusEntry,
   InstancePlacementReason,
+  MaintenanceNoticeState,
+  OpsHealthSnapshot,
   PlayerModerationReport,
   PlayerSessionRecord,
   ProximityChatMessage,
@@ -91,8 +96,17 @@ import {
   type PurchaseFoodItemMessage,
   type RecordPassportProgressMessage,
   type SetSocialPrivacyMessage,
-  type ZooEventsSnapshotMessage
+  type ZooEventsSnapshotMessage,
+  type BetaFeedbackAckMessage,
+  type OpsSnapshotMessage,
+  type ResolvePlayerReportMessage,
+  type SetMaintenanceNoticeMessage,
+  type SubmitBetaFeedbackMessage
 } from './protocol';
+import {
+  PUBLIC_BETA_VERSION,
+  validateBetaFeedbackInput
+} from '../readiness';
 import {
   ANIMAL_SPECIES_IDS,
   AnimalSimulationSystem,
@@ -231,13 +245,21 @@ export class ZooInstanceAuthority {
   private readonly processedEventRewardClaims = new Map<string, EventRewardResultMessage>();
   private readonly playerPrivacy = new Map<string, { allowFriendJoin: boolean }>();
   private readonly configuredRoomIds = new Set<string>();
+  private readonly startedAt: number;
+  private readonly betaFeedbackItems: BetaFeedbackRecord[] = [];
+  private readonly feedbackTimestampsBySession = new Map<string, number[]>();
+  private readonly diagnosticErrors: DiagnosticErrorEntry[] = [];
+  private maintenanceNotice: MaintenanceNoticeState | null = null;
 
   private globalSessionCounter = 0;
   private globalMessageCounter = 0;
   private globalFriendReqCounter = 0;
   private globalReportCounter = 0;
+  private globalFeedbackCounter = 0;
+  private globalErrorCounter = 0;
 
   constructor(options: ZooInstanceAuthorityOptions = {}) {
+    this.startedAt = Date.now();
     this.maxPlayersPerRoom = options.maxPlayersPerRoom ?? DEFAULT_MAX_PLAYERS_PER_ROOM;
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
     this.resumeGraceWindowMs = options.resumeGraceWindowMs ?? RESUME_GRACE_WINDOW_MS;
@@ -1369,7 +1391,8 @@ export class ZooInstanceAuthority {
         inventory: { ...(selfRecord.foodInventory ?? createEmptyFoodInventory()) }
       },
       passportState: this.getPlayerPassportState(selfRecord.playerId),
-      zooEvents: this.getRoomEventsSnapshot(room.roomId, now)
+      zooEvents: this.getRoomEventsSnapshot(room.roomId, now),
+      maintenanceNotice: this.maintenanceNotice ? { ...this.maintenanceNotice } : null
     };
   }
 
@@ -2820,7 +2843,9 @@ export class ZooInstanceAuthority {
         text: m.text,
         createdAt: m.createdAt
       })),
-      createdAt: new Date(now).toISOString()
+      createdAt: new Date(now).toISOString(),
+      status: 'open',
+      resolvedAt: null
     };
 
     this.moderationReports.push(report);
@@ -2831,6 +2856,286 @@ export class ZooInstanceAuthority {
         type: 'report_submitted_ack',
         report
       }
+    };
+  }
+
+  /**
+   * Submits structured player Beta Feedback with diagnostic metadata and rate limiting (`FR-007`, `FR-008`, `SC-004`).
+   */
+  public submitBetaFeedback(
+    sessionId: string,
+    msg: SubmitBetaFeedbackMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    ack: BetaFeedbackAckMessage | null;
+    opsUpdate?: OpsSnapshotMessage;
+    errorCode?: ErrorNoticeMessage['code'];
+    errorMessage?: string;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        ack: null,
+        errorCode: 'INVALID_PAYLOAD',
+        errorMessage: 'Session not active.'
+      };
+    }
+
+    // Rate limit: max 5 feedback submissions per 60s per session
+    const windowMs = 60_000;
+    const recent = (this.feedbackTimestampsBySession.get(sessionId) ?? []).filter(
+      (t) => now - t < windowMs
+    );
+    if (recent.length >= 5) {
+      this.recordDiagnosticError(
+        {
+          code: 'FEEDBACK_RATE_LIMITED',
+          message: 'Player exceeded beta feedback submission rate limit (5/60s).',
+          roomId: room.roomId,
+          playerId: session.playerId
+        },
+        now
+      );
+      return {
+        accepted: false,
+        ack: null,
+        errorCode: 'FEEDBACK_RATE_LIMITED',
+        errorMessage: 'You are submitting feedback too quickly. Please wait a moment.'
+      };
+    }
+
+    const validated = validateBetaFeedbackInput({
+      category: msg.category,
+      severity: msg.severity,
+      message: msg.message
+    });
+    if (!validated.valid || !validated.category || !validated.severity || !validated.normalizedMessage) {
+      return {
+        accepted: false,
+        ack: null,
+        errorCode: 'INVALID_PAYLOAD',
+        errorMessage: validated.errorMessage ?? 'Invalid beta feedback payload.'
+      };
+    }
+
+    recent.push(now);
+    this.feedbackTimestampsBySession.set(sessionId, recent);
+
+    const rawDiag = msg.diagnostics ?? {};
+    const diagnostics: BetaDiagnosticContext = {
+      playerId: session.playerId,
+      roomId: room.roomId,
+      fps:
+        typeof rawDiag.fps === 'number' && Number.isFinite(rawDiag.fps)
+          ? Math.max(1, Math.min(240, Math.round(rawDiag.fps)))
+          : 60,
+      avgFrameTimeMs:
+        typeof rawDiag.avgFrameTimeMs === 'number' && Number.isFinite(rawDiag.avgFrameTimeMs)
+          ? Number(rawDiag.avgFrameTimeMs.toFixed(1))
+          : 16.7,
+      qualityPreset:
+        rawDiag.qualityPreset === 'auto' ||
+        rawDiag.qualityPreset === 'low' ||
+        rawDiag.qualityPreset === 'medium' ||
+        rawDiag.qualityPreset === 'high'
+          ? rawDiag.qualityPreset
+          : 'auto',
+      viewport:
+        typeof rawDiag.viewport === 'string' && rawDiag.viewport.trim().length > 0
+          ? rawDiag.viewport.trim().slice(0, 32)
+          : '1280x800',
+      inputMode: rawDiag.inputMode === 'touch' ? 'touch' : 'desktop',
+      visitorCount: room.activeSessions.size,
+      userAgentSummary:
+        typeof rawDiag.userAgentSummary === 'string' && rawDiag.userAgentSummary.trim().length > 0
+          ? rawDiag.userAgentSummary.trim().slice(0, 80)
+          : 'Browser Client'
+    };
+
+    this.globalFeedbackCounter += 1;
+    const feedback: BetaFeedbackRecord = {
+      feedbackId: `fb_${this.globalFeedbackCounter}_${now}`,
+      playerId: session.playerId,
+      displayName: session.baseDisplayName,
+      roomId: room.roomId,
+      category: validated.category,
+      severity: validated.severity,
+      message: validated.normalizedMessage,
+      diagnostics,
+      createdAt: now
+    };
+
+    this.betaFeedbackItems.unshift(feedback);
+    if (this.betaFeedbackItems.length > 100) {
+      this.betaFeedbackItems.pop();
+    }
+
+    return {
+      accepted: true,
+      ack: {
+        type: 'beta_feedback_ack',
+        feedback,
+        confirmationMessage: `Thank you! Beta feedback #${feedback.feedbackId} has been recorded with device diagnostics.`
+      },
+      opsUpdate: this.buildOpsSnapshotMessage(now)
+    };
+  }
+
+  /**
+   * Resolves or dismisses a submitted player safety report (`FR-010`, `SC-005`).
+   */
+  public resolvePlayerReport(
+    sessionId: string | null,
+    msg: ResolvePlayerReportMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    report: PlayerModerationReport | null;
+    opsUpdate?: OpsSnapshotMessage;
+    errorCode?: ErrorNoticeMessage['code'];
+    errorMessage?: string;
+  } {
+    if (sessionId) {
+      this.ensureSessionActive(sessionId, now);
+    }
+    const target = this.moderationReports.find((r) => r.reportId === msg.reportId);
+    if (!target) {
+      return {
+        accepted: false,
+        report: null,
+        errorCode: 'INVALID_PAYLOAD',
+        errorMessage: `Report ${msg.reportId} not found.`
+      };
+    }
+
+    target.status = msg.resolution;
+    target.resolvedAt = now;
+
+    return {
+      accepted: true,
+      report: { ...target },
+      opsUpdate: this.buildOpsSnapshotMessage(now)
+    };
+  }
+
+  /**
+   * Sets or clears a non-disruptive operator maintenance/update banner (`FR-010`, `SC-005`).
+   */
+  public setMaintenanceNotice(
+    sessionId: string | null,
+    msg: SetMaintenanceNoticeMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    maintenanceNotice: MaintenanceNoticeState | null;
+    opsUpdate: OpsSnapshotMessage;
+  } {
+    if (sessionId) {
+      this.ensureSessionActive(sessionId, now);
+    }
+
+    if (!msg.active) {
+      this.maintenanceNotice = null;
+    } else {
+      const text =
+        typeof msg.message === 'string' && msg.message.trim().length > 0
+          ? msg.message.trim().slice(0, 240)
+          : 'Scheduled Public Beta update in progress — your Zoo Passport and Coins are safely auto-saved.';
+      this.maintenanceNotice = {
+        active: true,
+        message: text,
+        severity: msg.severity === 'warning' ? 'warning' : 'info',
+        updatedAt: now
+      };
+    }
+
+    return {
+      accepted: true,
+      maintenanceNotice: this.maintenanceNotice ? { ...this.maintenanceNotice } : null,
+      opsUpdate: this.buildOpsSnapshotMessage(now)
+    };
+  }
+
+  public recordDiagnosticError(
+    params: {
+      code: string;
+      message: string;
+      roomId?: string | null;
+      playerId?: string | null;
+    },
+    now = Date.now()
+  ): DiagnosticErrorEntry {
+    this.globalErrorCounter += 1;
+    const entry: DiagnosticErrorEntry = {
+      errorId: `err_${this.globalErrorCounter}_${now}`,
+      code: params.code,
+      message: params.message,
+      roomId: params.roomId ?? null,
+      playerId: params.playerId ?? null,
+      timestamp: now
+    };
+    this.diagnosticErrors.unshift(entry);
+    if (this.diagnosticErrors.length > 50) {
+      this.diagnosticErrors.pop();
+    }
+    return entry;
+  }
+
+  public getBetaFeedbackItems(): BetaFeedbackRecord[] {
+    return [...this.betaFeedbackItems];
+  }
+
+  public getDiagnosticErrors(): DiagnosticErrorEntry[] {
+    return [...this.diagnosticErrors];
+  }
+
+  public getMaintenanceNotice(): MaintenanceNoticeState | null {
+    return this.maintenanceNotice ? { ...this.maintenanceNotice } : null;
+  }
+
+  public getOpsHealthSnapshot(now = Date.now()): OpsHealthSnapshot {
+    const instances = this.getAvailableInstances();
+    let totalVisitors = 0;
+    let healthyInstances = 0;
+    let unhealthyInstances = 0;
+    for (const inst of instances) {
+      totalVisitors += inst.visitorCount;
+      if ((inst.status ?? 'healthy') === 'unhealthy') {
+        unhealthyInstances += 1;
+      } else {
+        healthyInstances += 1;
+      }
+    }
+
+    const openReportsCount = this.moderationReports.filter(
+      (r) => (r.status ?? 'open') === 'open'
+    ).length;
+
+    return {
+      version: PUBLIC_BETA_VERSION,
+      status: healthyInstances > 0 ? 'ok' : 'degraded',
+      uptimeMs: Math.max(0, now - this.startedAt),
+      totalVisitors,
+      healthyInstances,
+      unhealthyInstances,
+      openReportsCount,
+      totalReportsCount: this.moderationReports.length,
+      feedbackCount: this.betaFeedbackItems.length,
+      recentErrorsCount: this.diagnosticErrors.length,
+      reports: [...this.moderationReports].reverse().slice(0, 25),
+      feedbackItems: this.betaFeedbackItems.slice(0, 25),
+      recentErrors: this.diagnosticErrors.slice(0, 25),
+      maintenanceNotice: this.maintenanceNotice ? { ...this.maintenanceNotice } : null,
+      serverTimestamp: now
+    };
+  }
+
+  public buildOpsSnapshotMessage(now = Date.now()): OpsSnapshotMessage {
+    return {
+      type: 'ops_snapshot',
+      snapshot: this.getOpsHealthSnapshot(now)
     };
   }
 

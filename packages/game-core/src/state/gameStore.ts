@@ -4,6 +4,8 @@ import type {
   ActiveAvatarEmote,
   ActiveFoodConsumption,
   AvatarAppearance,
+  BetaReadinessStoreSlice,
+  DiagnosticErrorEntry,
   DiningStoreSlice,
   EventErrorCode,
   EventsStoreSlice,
@@ -13,14 +15,18 @@ import type {
   FoodPurchaseErrorCode,
   FriendRequestRecord,
   FriendStatusEntry,
+  HelpCenterTabId,
   InputDeviceMode,
   InteractiveObjectDescriptor,
   LocalReconciliationState,
   LocomotionState,
+  MaintenanceNoticeState,
   MultiplayerSessionUIState,
+  OpsHealthSnapshot,
   PassportStoreSlice,
   PassportTabId,
   PassportToastNotification,
+  PerformanceTelemetrySnapshot,
   PersistedSocialProfile,
   PlayerAvatarState,
   PlayerIdentityProfile,
@@ -115,6 +121,11 @@ import {
   type ZooEventId,
   type ZooEventScheduleConfig
 } from '../events';
+import {
+  loadPersistedBetaReadinessState,
+  PUBLIC_BETA_VERSION,
+  savePersistedBetaReadinessState
+} from '../readiness';
 
 export interface AnimalStoreSlice {
   animals: AnimalInstanceState[];
@@ -387,6 +398,29 @@ export function createInitialEventsSlice(): EventsStoreSlice {
   };
 }
 
+export function createInitialBetaReadinessSlice(): BetaReadinessStoreSlice {
+  const persisted = loadPersistedBetaReadinessState();
+  return {
+    version: PUBLIC_BETA_VERSION,
+    hasCompletedOnboarding: persisted.hasCompletedOnboarding,
+    isOnboardingOpen: !persisted.hasCompletedOnboarding,
+    isHelpCenterOpen: false,
+    activeTab: 'controls',
+    autoQualityAdjust: persisted.autoQualityAdjust,
+    telemetry: {
+      fps: 60,
+      avgFrameTimeMs: 16.7,
+      p95FrameTimeMs: 16.7,
+      lowFpsStreak: 0,
+      autoDowngradedCount: 0
+    },
+    feedbackNotice: null,
+    maintenanceNotice: null,
+    opsSnapshot: null,
+    clientErrors: []
+  };
+}
+
 function areConsumptionsEqual(
   a?: ActiveFoodConsumption | null,
   b?: ActiveFoodConsumption | null
@@ -469,6 +503,7 @@ export interface GameUIStoreState {
   dining: DiningStoreSlice;
   passport: PassportStoreSlice;
   events: EventsStoreSlice;
+  betaReadiness: BetaReadinessStoreSlice;
 
   setPhase: (phase: SessionPhase) => void;
   setLoadingProgress: (progress: number) => void;
@@ -669,6 +704,18 @@ export interface GameUIStoreState {
     errorCode?: EventErrorCode;
     message: string;
   };
+  setOnboardingOpen: (isOpen: boolean) => void;
+  completeOnboarding: () => void;
+  setHelpCenterOpen: (isOpen: boolean, tab?: HelpCenterTabId) => void;
+  setHelpCenterTab: (tab: HelpCenterTabId) => void;
+  setAutoQualityAdjust: (enabled: boolean) => void;
+  updatePerformanceTelemetry: (telemetry: PerformanceTelemetrySnapshot) => void;
+  setBetaFeedbackNotice: (
+    notice: { type: 'success' | 'error'; message: string; timestamp?: number } | null
+  ) => void;
+  setMaintenanceNotice: (notice: MaintenanceNoticeState | null) => void;
+  setOpsSnapshot: (snapshot: OpsHealthSnapshot) => void;
+  recordClientError: (code: string, message: string) => void;
   updateSettings: (partial: Partial<UserSettings>) => void;
   resetSession: () => void;
 }
@@ -701,6 +748,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   dining: createInitialDiningSlice(),
   passport: createInitialPassportSlice(),
   events: createInitialEventsSlice(),
+  betaReadiness: createInitialBetaReadinessSlice(),
 
   setPhase: (phase) =>
     set((state) => ({
@@ -904,6 +952,12 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       passport: {
         ...state.passport,
         state: evaluatedPassport
+      },
+      betaReadiness: {
+        ...state.betaReadiness,
+        hasCompletedOnboarding: loadPersistedBetaReadinessState().hasCompletedOnboarding,
+        isOnboardingOpen: !loadPersistedBetaReadinessState().hasCompletedOnboarding,
+        autoQualityAdjust: loadPersistedBetaReadinessState().autoQualityAdjust
       },
       multiplayer: {
         ...state.multiplayer,
@@ -2511,6 +2565,118 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     };
   },
 
+  setOnboardingOpen: (isOpen) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        isOnboardingOpen: isOpen
+      }
+    })),
+
+  completeOnboarding: () => {
+    const saved = savePersistedBetaReadinessState({
+      hasCompletedOnboarding: true,
+      lastSeenVersion: PUBLIC_BETA_VERSION
+    });
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        hasCompletedOnboarding: saved.hasCompletedOnboarding,
+        isOnboardingOpen: false
+      }
+    }));
+  },
+
+  setHelpCenterOpen: (isOpen, tab) =>
+    set((state) => ({
+      isPointerLocked: isOpen ? false : state.isPointerLocked,
+      isCursorRevealed: isOpen ? true : false,
+      betaReadiness: {
+        ...state.betaReadiness,
+        isHelpCenterOpen: isOpen,
+        activeTab: tab ?? state.betaReadiness.activeTab
+      }
+    })),
+
+  setHelpCenterTab: (tab) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        activeTab: tab
+      }
+    })),
+
+  setAutoQualityAdjust: (enabled) => {
+    const saved = savePersistedBetaReadinessState({
+      autoQualityAdjust: enabled
+    });
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        autoQualityAdjust: saved.autoQualityAdjust
+      }
+    }));
+  },
+
+  updatePerformanceTelemetry: (telemetry) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        telemetry: { ...telemetry }
+      }
+    })),
+
+  setBetaFeedbackNotice: (notice) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        feedbackNotice: notice
+          ? {
+              type: notice.type,
+              message: notice.message,
+              timestamp: notice.timestamp ?? Date.now()
+            }
+          : null
+      }
+    })),
+
+  setMaintenanceNotice: (maintenanceNotice) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        maintenanceNotice: maintenanceNotice ? { ...maintenanceNotice } : null
+      }
+    })),
+
+  setOpsSnapshot: (snapshot) =>
+    set((state) => ({
+      betaReadiness: {
+        ...state.betaReadiness,
+        opsSnapshot: snapshot,
+        maintenanceNotice: snapshot.maintenanceNotice
+          ? { ...snapshot.maintenanceNotice }
+          : null
+      }
+    })),
+
+  recordClientError: (code, message) =>
+    set((state) => {
+      const entry: DiagnosticErrorEntry = {
+        errorId: `cerr_${Date.now()}_${state.betaReadiness.clientErrors.length + 1}`,
+        code,
+        message,
+        roomId: state.multiplayer.roomId,
+        playerId: state.identity.profile.playerId,
+        timestamp: Date.now()
+      };
+      return {
+        betaReadiness: {
+          ...state.betaReadiness,
+          clientErrors: [entry, ...state.betaReadiness.clientErrors].slice(0, 25)
+        }
+      };
+    }),
+
   updateSettings: (partial) =>
     set((state) => {
       const merged = sanitizeUserSettings({ ...state.settings, ...partial });
@@ -2535,7 +2701,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       animalSim: createInitialAnimalSlice(),
       dining: createInitialDiningSlice(),
       passport: createInitialPassportSlice(),
-      events: createInitialEventsSlice()
+      events: createInitialEventsSlice(),
+      betaReadiness: createInitialBetaReadinessSlice()
     });
   }
 }));

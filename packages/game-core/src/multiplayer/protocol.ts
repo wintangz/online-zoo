@@ -3,6 +3,10 @@ import type {
   ActiveAvatarEmote,
   ActiveFoodConsumption,
   AvatarAppearance,
+  BetaDiagnosticContext,
+  BetaFeedbackCategory,
+  BetaFeedbackRecord,
+  BetaFeedbackSeverity,
   EmoteId,
   EventErrorCode,
   FoodConsumeErrorCode,
@@ -11,6 +15,8 @@ import type {
   FriendStatusEntry,
   InstancePlacementReason,
   LocomotionState,
+  MaintenanceNoticeState,
+  OpsHealthSnapshot,
   PlayerModerationReport,
   ProximityChatMessage,
   ReportReason,
@@ -21,6 +27,10 @@ import type {
 } from '../types';
 import { isValidEmoteId } from '../social/emoteCatalog';
 import { isValidReportReason } from '../social/socialPersistence';
+import {
+  isValidBetaFeedbackCategory,
+  isValidBetaFeedbackSeverity
+} from '../readiness';
 import {
   ANIMAL_SPECIES_IDS,
   ZOO_HABITAT_ZONES,
@@ -280,6 +290,31 @@ export interface ConfigureInstanceMessage {
   status?: ZooInstanceHealthStatus;
 }
 
+export interface SubmitBetaFeedbackMessage {
+  type: 'submit_beta_feedback';
+  category: BetaFeedbackCategory;
+  severity: BetaFeedbackSeverity;
+  message: string;
+  diagnostics?: Partial<BetaDiagnosticContext>;
+}
+
+export interface ResolvePlayerReportMessage {
+  type: 'resolve_player_report';
+  reportId: string;
+  resolution: 'resolved' | 'dismissed';
+}
+
+export interface SetMaintenanceNoticeMessage {
+  type: 'set_maintenance_notice';
+  active: boolean;
+  message?: string;
+  severity?: 'info' | 'warning';
+}
+
+export interface RequestOpsSnapshotMessage {
+  type: 'request_ops_snapshot';
+}
+
 export interface PingMessage {
   type: 'ping';
   clientTimestamp: number;
@@ -317,6 +352,10 @@ export type ClientMultiplayerMessage =
   | ConfigureZooEventsMessage
   | SetSocialPrivacyMessage
   | ConfigureInstanceMessage
+  | SubmitBetaFeedbackMessage
+  | ResolvePlayerReportMessage
+  | SetMaintenanceNoticeMessage
+  | RequestOpsSnapshotMessage
   | PingMessage
   | LeaveInstanceMessage;
 
@@ -374,6 +413,7 @@ export interface WelcomeSnapshotMessage {
     seasonalTheme: SeasonalThemeId;
     events: LiveZooEventState[];
   };
+  maintenanceNotice?: MaintenanceNoticeState | null;
 }
 
 export interface PlayerJoinedMessage {
@@ -559,6 +599,17 @@ export interface PongMessage {
   serverTimestamp: number;
 }
 
+export interface BetaFeedbackAckMessage {
+  type: 'beta_feedback_ack';
+  feedback: BetaFeedbackRecord;
+  confirmationMessage: string;
+}
+
+export interface OpsSnapshotMessage {
+  type: 'ops_snapshot';
+  snapshot: OpsHealthSnapshot;
+}
+
 export interface ErrorNoticeMessage {
   type: 'error_notice';
   code:
@@ -578,7 +629,8 @@ export interface ErrorNoticeMessage {
     | 'EVENT_FULL'
     | 'EVENT_NOT_ACTIVE'
     | 'NOT_PARTICIPATING'
-    | 'INVALID_EVENT_CONFIG';
+    | 'INVALID_EVENT_CONFIG'
+    | 'FEEDBACK_RATE_LIMITED';
   message: string;
 }
 
@@ -602,6 +654,8 @@ export type ServerMultiplayerMessage =
   | AchievementRewardResultMessage
   | ZooEventsSnapshotMessage
   | EventRewardResultMessage
+  | BetaFeedbackAckMessage
+  | OpsSnapshotMessage
   | PongMessage
   | ErrorNoticeMessage;
 
@@ -1151,6 +1205,68 @@ export function parseClientMultiplayerMessage(
           ...(maxPlayers !== undefined ? { maxPlayers } : {}),
           ...(status !== undefined ? { status } : {})
         };
+      }
+
+      case 'submit_beta_feedback': {
+        if (
+          !isValidBetaFeedbackCategory(parsed.category) ||
+          !isValidBetaFeedbackSeverity(parsed.severity) ||
+          typeof parsed.message !== 'string' ||
+          parsed.message.trim().length === 0 ||
+          parsed.message.length > 600
+        ) {
+          return null;
+        }
+        const diagnostics =
+          parsed.diagnostics && typeof parsed.diagnostics === 'object'
+            ? (parsed.diagnostics as Partial<BetaDiagnosticContext>)
+            : undefined;
+        return {
+          type: 'submit_beta_feedback',
+          category: parsed.category,
+          severity: parsed.severity,
+          message: parsed.message,
+          ...(diagnostics !== undefined ? { diagnostics } : {})
+        };
+      }
+
+      case 'resolve_player_report': {
+        if (
+          typeof parsed.reportId !== 'string' ||
+          parsed.reportId.trim().length === 0 ||
+          (parsed.resolution !== 'resolved' && parsed.resolution !== 'dismissed')
+        ) {
+          return null;
+        }
+        return {
+          type: 'resolve_player_report',
+          reportId: parsed.reportId.trim(),
+          resolution: parsed.resolution
+        };
+      }
+
+      case 'set_maintenance_notice': {
+        if (typeof parsed.active !== 'boolean') {
+          return null;
+        }
+        const message =
+          typeof parsed.message === 'string'
+            ? parsed.message.trim().slice(0, 240)
+            : undefined;
+        const severity =
+          parsed.severity === 'info' || parsed.severity === 'warning'
+            ? parsed.severity
+            : undefined;
+        return {
+          type: 'set_maintenance_notice',
+          active: parsed.active,
+          ...(message !== undefined ? { message } : {}),
+          ...(severity !== undefined ? { severity } : {})
+        };
+      }
+
+      case 'request_ops_snapshot': {
+        return { type: 'request_ops_snapshot' };
       }
 
       case 'ping': {

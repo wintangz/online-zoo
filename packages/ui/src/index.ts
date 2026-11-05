@@ -10,3 +10,4 @@ export * from './AnimalSimulationOverlay';
 export * from './FoodAndDiningOverlay';
 export * from './ZooPassportOverlay';
 export * from './EventsAndActivitiesOverlay';
+export * from './BetaReadinessOverlay';

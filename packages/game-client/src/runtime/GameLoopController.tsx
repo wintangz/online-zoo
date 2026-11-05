@@ -10,8 +10,11 @@ import {
   MultiplayerClient,
   mutableRuntimeState,
   PANDA_FOREST_LAYOUT,
+  PerformanceMonitor,
   resolveHorizontalWorldCollisions
 } from '@online-zoo/game-core';
+
+const performanceMonitor = new PerformanceMonitor();
 
 export interface GameLoopControllerProps {
   inputController: InputController;
@@ -116,6 +119,8 @@ export function stepGameRuntimeTick(
       storeState.inspectAnimal(null);
     } else if (storeState.animalSim.isEncyclopediaOpen) {
       storeState.setEncyclopediaOpen(false);
+    } else if (storeState.betaReadiness.isHelpCenterOpen) {
+      storeState.setHelpCenterOpen(false);
     } else if (storeState.social.reportModalTarget) {
       storeState.closeReportModal();
     } else if (storeState.social.isSocialDrawerOpen) {
@@ -129,6 +134,18 @@ export function stepGameRuntimeTick(
       storeState.setPhase('playing');
       storeState.setCursorState(false, false);
     }
+  }
+
+  const perf = performanceMonitor.recordFrame(
+    dt,
+    storeState.settings.qualityTier,
+    storeState.betaReadiness.autoQualityAdjust
+  );
+  if (perf.recommendedQuality) {
+    storeState.updateSettings({ qualityTier: perf.recommendedQuality });
+    storeState.updatePerformanceTelemetry(perf.snapshot);
+  } else if (mutableRuntimeState.frameCount % 12 === 0) {
+    storeState.updatePerformanceTelemetry(perf.snapshot);
   }
 
   if (storeState.phase !== 'playing') {
@@ -367,6 +384,7 @@ export const GameLoopController: React.FC<GameLoopControllerProps> = (props) => 
         ...props,
         gameStore,
         mutableRuntimeState,
+        performanceMonitor,
         stepFrames: (frames = 1, dt = 1 / 60) => {
           for (let i = 0; i < frames; i++) {
             stepGameRuntimeTick(dt, props);
