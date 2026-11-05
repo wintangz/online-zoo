@@ -21,3 +21,25 @@
   - Logged in `specs/web-server-split/ASSUMPTIONS.md`: `/occupancy` (plus `/api/occupancy` and `/health` aliases) returns JSON `{ status, serverTimestamp, totalPlayers, zones, rooms }`; `ALLOWED_ORIGINS` defaults to `*` in local dev when unset and enforces strict origin matching on HTTP CORS and WebSocket upgrades when configured.
 - **Anything to Review**:
   - None; all architecture constraints and tests are green.
+
+
+## `world-zones`
+
+- **Slug**: `world-zones`
+- **Branch**: `fix/world-zones`
+- **Commit Hash**: `5958228`
+- **What Changed**:
+  - Wrote the foundational flat-shaded low-poly art style guide in `specs/world-zones/art-style-guide.md` and exported the 20-color shared `ZOO_PALETTE` plus zone-to-asset mapping (`zones: AssetZoneId[]`, `getAssetsForZone`, `getPreloadUrlsForZone`) in `packages/game-assets/src/manifest.ts`.
+  - Added the shared multi-zone registry (`WORLD_ZONES_BY_ID`, `WORLD_ZONES_LIST`, `getZoneById`, `resolveZoneForRoomId`, `getLayoutForRoomId`, `findGateLinkByObjectId`) in `packages/game-core/src/world/zoneRegistry.ts` defining `'zoo-lobby'` (`roomId: 'zoo-lobby-1'`, `sceneId: 'zoo-lobby'`, `0` animals) and `'panda-forest'` (`roomId: 'panda-forest-1'`, `sceneId: 'panda-forest'`).
+  - Built `ZooLobbyScene.tsx` in `packages/game-client/src/environment/ZooLobbyScene.tsx` featuring flat-shaded low-poly entrance plaza, ticket booths, central compass meeting point, zone directory signage, benches, North Gate archway to Panda Forest, and zero animals.
+  - Added symmetric interactable zone gates (`'gate-to-panda-forest'` prompting `'Enter Panda Forest?'` and `'gate-to-zoo-lobby'` prompting `'Enter Zoo Lobby?'`) using `InteractionSystem` and `MultiplayerClient.switchZoneViaGate`, displaying `EntryLoadingScreen` with destination zone name and spawning players at the paired return gate coordinates.
+  - Scoped presence, proximity chat, and animal simulation per room in `apps/server/src/zooInstanceAuthority.ts`, populated `zoneId` and `zoneDisplayName` on `FriendStatusEntry` and `SocialInteractionOverlay`, and enforced lobby-first spawn (`'zoo-lobby-1'`) for all joins and reconnect/resume flows.
+- **Check Results**:
+  - `pnpm typecheck`: 7/7 packages passed (`0` errors)
+  - `pnpm lint`: 7/7 packages passed (`0` errors)
+  - `pnpm test`: 22 test files, 86 unit/integration tests passed (`@online-zoo/server`, `@online-zoo/game-core`, `@online-zoo/game-client`, `@online-zoo/game-assets`)
+  - Playwright E2E (`e2e/playable-zoo-world.spec.ts`, `e2e/multiplayer-sync.spec.ts`): 2 passed — verified initial spawn in `Zoo Lobby`, gate transition prompt `'Enter Panda Forest?'`, switching to `Panda Forest`, and multi-window multiplayer sync.
+- **Assumptions**:
+  - Logged in `specs/world-zones/ASSUMPTIONS.md`: `'zoo-lobby'` uses primary room `'zoo-lobby-1'` while `'panda-forest'` retains `'panda-forest-1'`; reconnect/resume always places the player at the Zoo Lobby entrance spawn (`[0, 0.1, 18]`) while preserving identity, wallet, and passport progress.
+- **Anything to Review**:
+  - None; all unit, server integration, and Playwright E2E checks are green.
