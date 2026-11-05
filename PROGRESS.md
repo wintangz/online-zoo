@@ -68,3 +68,25 @@
   - Logged in `specs/main-menu/ASSUMPTIONS.md`: HTTP `/occupancy` URL is derived by converting `ws://` / `wss://` in `NEXT_PUBLIC_WS_URL` to `http://` / `https://` at `/occupancy`; returning visitors are tracked via `localStorage` key `'online-zoo:returning-visitor:v1'` set upon clicking PLAY; default `Explorer #...` names keep `isCustomized: false` unless edited so sequential room visitor labels (`Explorer #101`, `Explorer #102`) continue to work when players do not customize their name.
 - **Anything to Review**:
   - None; all unit, server integration, and Playwright E2E checks are green.
+
+
+## `art-style-unification`
+
+- **Slug**: `art-style-unification`
+- **Branch**: `fix/art-style-unification`
+- **Commit Hash**: `ce9dfb3`
+- **What Changed**:
+  - Wrote the Flat-Shaded Low-Poly Sanctuary Art Style Guide in `specs/art-style-unification/spec.md` codifying the 20-color `ZOO_PALETTE` in `@online-zoo/game-assets`, hard per-face normals (`flatShading: true`), zero photographic textures, and zero ad-hoc hex literals in scene/entity files.
+  - Updated `packages/game-assets/scripts/generate-glb-assets.mjs` and `packages/game-assets/src/manifest.ts` to generate flat-shaded low-poly `.glb` models strictly from `ZOO_PALETTE` for the animal roster (`animal-panda`, `animal-penguin`, `animal-otter` with `ANIMAL_SPECIES_TO_ASSET_ID` / `getAnimalAssetId` lookup), restyled the existing 6 avatar and prop `.glb` models while preserving their exact manifest IDs and `boundingRadius` values, and added `.glb` models for dining/lobby props (`prop-food-stall`, `prop-cafe-table`, `prop-picnic-table`, `prop-ticket-booth`, `prop-fountain`).
+  - Refactored `packages/game-client/src/entities/ZooAnimalsLayer.tsx` to load and render the registered `.glb` animal models from `ASSET_MANIFEST` via `useGLTF(getAssetUrl(getAnimalAssetId(speciesId)))` instead of code-assembled primitive stacks.
+  - Created `packages/game-client/src/materials/paletteMaterials.ts` providing shared flat-shaded palette materials (`PALETTE_MATERIALS`, `PALETTE_COLORS`, `createFlatStandardMaterial`) and refactored all scene and entity files in `packages/game-client/src/` (`TerrainAndPaths.tsx`, `PerimeterEnclosure.tsx`, `PondShoreline.tsx`, `InstancedFoliage.tsx`, `InteractiveProps.tsx`, `PandaForestScene.tsx`, `ZooLobbyScene.tsx`, `AvatarVisualRig.tsx`) so code-built geometry remains only for terrain, paths, water, and fences, with zero color literals outside `paletteMaterials.ts`.
+  - Added automated compliance test `packages/game-client/__tests__/artStyleCompliance.test.ts` scanning all scene/entity files in `packages/game-client/src/` and failing on any `#...`, `rgb(...)`, `hsl(...)`, or `0x...` literal outside `paletteMaterials.ts` or any `getAssetUrl(...)` reference missing from `ASSET_MANIFEST`.
+- **Check Results**:
+  - `pnpm typecheck`: 7/7 packages passed (`0` errors)
+  - `pnpm lint`: 7/7 packages passed (`0` errors)
+  - `pnpm test`: 24 test files, 95 unit/integration tests passed (`@online-zoo/server`, `@online-zoo/game-core`, `@online-zoo/game-client`, `@online-zoo/game-assets`)
+  - Playwright E2E (`e2e/playable-zoo-world.spec.ts`, `e2e/multiplayer-sync.spec.ts`): 2 passed — verified flat-shaded low-poly GLB scenes, props, and animals across Zoo Lobby and Panda Forest.
+- **Assumptions**:
+  - Logged in `specs/art-style-unification/ASSUMPTIONS.md`: Animal species map to `'animal-<species>'` manifest IDs via `ANIMAL_SPECIES_TO_ASSET_ID`; kiosk/table/lobby structures are registered as `.glb` prop entries (`prop-food-stall`, `prop-cafe-table`, `prop-picnic-table`, `prop-ticket-booth`, `prop-fountain`) while the original 6 manifest IDs and their `boundingRadius` values remain unchanged.
+- **Anything to Review**:
+  - None; `apps/server` is completely untouched and all compliance, unit, and E2E tests are green.
