@@ -1,13 +1,17 @@
 import type {
   ActiveAvatarEmote,
+  ActiveFoodConsumption,
   AvatarAppearance,
+  EventErrorCode,
   FriendRequestRecord,
   FriendStatusEntry,
+  InstancePlacementReason,
   PlayerModerationReport,
   PlayerSessionRecord,
   ProximityChatMessage,
   SharedPropAuthorityState,
   WorldSeatOccupancyState,
+  ZooInstanceHealthStatus,
   ZooInstanceRoom,
   ZooInstanceSummary
 } from '../types';
@@ -69,14 +73,66 @@ import {
   type TriggerEmoteMessage,
   type UpdateIdentityMessage,
   type WelcomeSnapshotMessage,
-  type AnimalFeedingEventMessage
+  type AnimalFeedingEventMessage,
+  type AchievementRewardResultMessage,
+  type ClaimAchievementRewardMessage,
+  type ClaimEventRewardMessage,
+  type ConfigureInstanceMessage,
+  type ConfigureZooEventsMessage,
+  type ConsumeFoodItemMessage,
+  type EventRewardResultMessage,
+  type FoodConsumeResultMessage,
+  type FoodPurchaseResultMessage,
+  type InstanceDirectoryUpdateMessage,
+  type JoinZooEventMessage,
+  type LeaveZooEventMessage,
+  type PerformEventActionMessage,
+  type PlayerConsumptionUpdatedMessage,
+  type PurchaseFoodItemMessage,
+  type RecordPassportProgressMessage,
+  type SetSocialPrivacyMessage,
+  type ZooEventsSnapshotMessage
 } from './protocol';
 import {
+  ANIMAL_SPECIES_IDS,
   AnimalSimulationSystem,
   type AnimalInstanceState,
+  type AnimalSpeciesId,
   type HabitatFeedingState,
   type HabitatId
 } from '../animals';
+import {
+  createEmptyFoodInventory,
+  FOOD_CATALOG_BY_ID,
+  INITIAL_ZOO_COINS,
+  isValidFoodItemId,
+  MAX_FOOD_ITEM_QUANTITY,
+  sanitizeDiningWalletSnapshot,
+  type FoodInventoryRecord
+} from '../dining';
+import {
+  ACHIEVEMENT_IDS,
+  ACHIEVEMENTS_BY_ID,
+  createDefaultPassportState,
+  evaluatePassportAchievements,
+  evaluateProximityZoneStamp,
+  isValidAchievementId,
+  isValidPassportZoneId,
+  PASSPORT_ZONE_IDS,
+  PASSPORT_ZONES_BY_ID,
+  recordPassportActivityCompletion,
+  recordPassportSocialInteraction,
+  recordPassportZoneStamp,
+  sanitizePlayerPassportState,
+  type PlayerPassportState
+} from '../passport';
+import {
+  isValidZooEventId,
+  RoomEventsEngine,
+  ZOO_EVENTS_BY_ID,
+  type LiveZooEventState,
+  type SeasonalThemeId
+} from '../events';
 
 export interface ZooInstanceAuthorityOptions {
   maxPlayersPerRoom?: number;
@@ -140,7 +196,8 @@ export function serializePlayerRecord(record: PlayerSessionRecord): SerializedPl
           ],
           facingYaw: record.seatedOn.facingYaw
         }
-      : null
+      : null,
+    activeConsumption: record.activeConsumption ? { ...record.activeConsumption } : null
   };
 }
 
@@ -162,6 +219,18 @@ export class ZooInstanceAuthority {
   private readonly pendingFriendRequests = new Map<string, FriendRequestRecord>();
   private readonly blockedPlayers = new Map<string, Set<string>>();
   private readonly moderationReports: PlayerModerationReport[] = [];
+  private readonly playerWallets = new Map<
+    string,
+    { currencyBalance: number; inventory: FoodInventoryRecord }
+  >();
+  private readonly processedPurchaseRequests = new Map<string, FoodPurchaseResultMessage>();
+  private readonly playerPassports = new Map<string, PlayerPassportState>();
+  private readonly playerDiscoveredSpecies = new Map<string, Set<AnimalSpeciesId>>();
+  private readonly processedRewardClaims = new Map<string, AchievementRewardResultMessage>();
+  private readonly roomEventEngines = new Map<string, RoomEventsEngine>();
+  private readonly processedEventRewardClaims = new Map<string, EventRewardResultMessage>();
+  private readonly playerPrivacy = new Map<string, { allowFriendJoin: boolean }>();
+  private readonly configuredRoomIds = new Set<string>();
 
   private globalSessionCounter = 0;
   private globalMessageCounter = 0;
@@ -180,6 +249,10 @@ export class ZooInstanceAuthority {
 
   public getRoom(roomId: string): ZooInstanceRoom | undefined {
     return this.rooms.get(roomId);
+  }
+
+  public getActivePlayerCount(roomId: string = DEFAULT_ROOM_ID): number {
+    return this.rooms.get(roomId)?.activeSessions.size ?? 0;
   }
 
   public getAllRoomIds(): string[] {
@@ -213,19 +286,103 @@ export class ZooInstanceAuthority {
     return this.getOrCreateAnimalSystem(roomId).getHabitatFeedings();
   }
 
+  private getOrCreateEventEngine(
+    roomId: string = DEFAULT_ROOM_ID,
+    now = Date.now()
+  ): RoomEventsEngine {
+    let engine = this.roomEventEngines.get(roomId);
+    if (!engine) {
+      engine = new RoomEventsEngine(now, 'spring-blossom');
+      this.roomEventEngines.set(roomId, engine);
+    }
+    return engine;
+  }
+
+  public getRoomEventsSnapshot(
+    roomId: string = DEFAULT_ROOM_ID,
+    now = Date.now()
+  ): {
+    seasonalTheme: SeasonalThemeId;
+    events: LiveZooEventState[];
+  } {
+    const engine = this.getOrCreateEventEngine(roomId, now);
+    return {
+      seasonalTheme: engine.getSeasonalTheme(),
+      events: engine.getEventsSnapshot()
+    };
+  }
+
+  public getInstanceLabel(roomId: string): string {
+    for (const preset of DEFAULT_PUBLIC_INSTANCES) {
+      if (preset.roomId === roomId) {
+        return preset.label;
+      }
+    }
+    const overflowMatch = /^panda-forest-(\d+)$/.exec(roomId);
+    if (overflowMatch && overflowMatch[1]) {
+      return `Panda Forest #${overflowMatch[1]} (Overflow Sanctuary)`;
+    }
+    return `Sanctuary Instance (${roomId})`;
+  }
+
+  public getPlayerAllowFriendJoin(playerId: string): boolean {
+    return this.playerPrivacy.get(playerId)?.allowFriendJoin ?? true;
+  }
+
+  /**
+   * Prunes dynamically created overflow or custom rooms once they have 0 active
+   * and 0 resumable sessions, unless explicitly configured (`FR-006`, `SC-001`).
+   */
+  public pruneEmptyOverflowRooms(now = Date.now()): string[] {
+    const presetIds = new Set<string>(DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId));
+    const pruned: string[] = [];
+    for (const [roomId, room] of this.rooms.entries()) {
+      this.pruneExpiredResumableTokens(room, now);
+      if (
+        !presetIds.has(roomId) &&
+        !this.configuredRoomIds.has(roomId) &&
+        (room.status ?? 'healthy') === 'healthy' &&
+        room.activeSessions.size === 0 &&
+        room.resumableSessions.size === 0
+      ) {
+        this.rooms.delete(roomId);
+        this.roomAnimalSystems.delete(roomId);
+        this.roomEventEngines.delete(roomId);
+        pruned.push(roomId);
+      }
+    }
+    return pruned;
+  }
+
   /**
    * Returns a live directory of available zoo instances (`FR-025`, `SC-009`),
    * always including the default public channels plus any active custom/overflow rooms.
+   * When `forPlayerId` is provided, annotates `friendCount` and sorts instances with friends first.
    */
-  public getAvailableInstances(): ZooInstanceSummary[] {
-    const labelMap = new Map<string, string>();
-    for (const preset of DEFAULT_PUBLIC_INSTANCES) {
-      labelMap.set(preset.roomId, preset.label);
-    }
+  public getAvailableInstances(forPlayerId?: string): ZooInstanceSummary[] {
+    this.pruneEmptyOverflowRooms();
 
+    const presetIds = new Set<string>(DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId));
     const roomIds = new Set<string>(DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId));
     for (const rid of this.rooms.keys()) {
       roomIds.add(rid);
+    }
+
+    const friendCountByRoom = new Map<string, number>();
+    if (forPlayerId) {
+      const friendSet = this.friendships.get(forPlayerId);
+      if (friendSet) {
+        for (const friendId of friendSet) {
+          if (this.isPlayerBlocked(forPlayerId, friendId)) continue;
+          const friendSession = this.findActiveSessionByPlayerId(friendId);
+          if (friendSession) {
+            friendCountByRoom.set(
+              friendSession.roomId,
+              (friendCountByRoom.get(friendSession.roomId) ?? 0) + 1
+            );
+          }
+        }
+      }
     }
 
     const summaries: ZooInstanceSummary[] = [];
@@ -233,14 +390,29 @@ export class ZooInstanceAuthority {
       const room = this.rooms.get(rid);
       const visitorCount = room ? room.activeSessions.size : 0;
       const maxPlayers = room ? room.maxPlayers : this.maxPlayersPerRoom;
+      const status: ZooInstanceHealthStatus = room?.status ?? 'healthy';
+      const friendCount = friendCountByRoom.get(rid) ?? 0;
       summaries.push({
         roomId: rid,
-        label: labelMap.get(rid) ?? `Custom Instance (${rid})`,
+        label: this.getInstanceLabel(rid),
         visitorCount,
         maxPlayers,
-        isFull: visitorCount >= maxPlayers
+        isFull: status === 'healthy' && visitorCount >= maxPlayers,
+        status,
+        friendCount,
+        isOverflow: !presetIds.has(rid)
       });
     }
+
+    if (forPlayerId) {
+      summaries.sort((a, b) => {
+        const fa = a.friendCount ?? 0;
+        const fb = b.friendCount ?? 0;
+        if (fb !== fa) return fb - fa;
+        return 0;
+      });
+    }
+
     return summaries;
   }
 
@@ -377,12 +549,25 @@ export class ZooInstanceAuthority {
         active: false,
         lastTriggeredBy: null,
         lastTriggeredAt: 0
+      },
+      'prop-plaza-cafe-table': {
+        objectId: 'prop-plaza-cafe-table',
+        active: false,
+        lastTriggeredBy: null,
+        lastTriggeredAt: 0
+      },
+      'prop-bamboo-picnic-table': {
+        objectId: 'prop-bamboo-picnic-table',
+        active: false,
+        lastTriggeredBy: null,
+        lastTriggeredAt: 0
       }
     };
 
     existing = {
       roomId: requestedRoomId,
       maxPlayers: this.maxPlayersPerRoom,
+      status: 'healthy',
       nextVisitorNumber: 101,
       activeSessions: new Map(),
       resumableSessions: new Map(),
@@ -396,26 +581,165 @@ export class ZooInstanceAuthority {
     return existing;
   }
 
-  private selectAvailableRoom(
+  private selectAvailableRoomWithReason(
     requestedRoomId: string = DEFAULT_ROOM_ID,
-    now = Date.now()
-  ): ZooInstanceRoom {
-    const primary = this.getOrCreateRoom(requestedRoomId, now);
-    if (primary.activeSessions.size < primary.maxPlayers) {
-      return primary;
+    now = Date.now(),
+    playerId?: string,
+    preferFriendPlacement = false,
+    excludedRoomIds?: Set<string>
+  ): {
+    room: ZooInstanceRoom;
+    placementReason: InstancePlacementReason;
+    placementNotice?: string;
+  } {
+    // 1. Friend-prioritized placement when entering without an explicit pinned room override (FR-003, SC-002)
+    if (preferFriendPlacement && playerId) {
+      const friendSet = this.friendships.get(playerId);
+      if (friendSet && friendSet.size > 0) {
+        const candidateCounts = new Map<string, number>();
+        for (const friendId of friendSet) {
+          if (this.isPlayerBlocked(playerId, friendId)) continue;
+          if (!this.getPlayerAllowFriendJoin(friendId)) continue;
+          const friendSession = this.findActiveSessionByPlayerId(friendId);
+          if (!friendSession) continue;
+          if (excludedRoomIds?.has(friendSession.roomId)) continue;
+          const friendRoom = this.rooms.get(friendSession.roomId);
+          if (
+            !friendRoom ||
+            (friendRoom.status ?? 'healthy') !== 'healthy' ||
+            friendRoom.activeSessions.size >= friendRoom.maxPlayers
+          ) {
+            continue;
+          }
+          candidateCounts.set(
+            friendRoom.roomId,
+            (candidateCounts.get(friendRoom.roomId) ?? 0) + 1
+          );
+        }
+
+        let bestFriendRoomId: string | null = null;
+        let bestFriendCount = 0;
+        for (const [rid, count] of candidateCounts.entries()) {
+          if (count > bestFriendCount) {
+            bestFriendCount = count;
+            bestFriendRoomId = rid;
+          }
+        }
+
+        if (bestFriendRoomId && bestFriendCount > 0) {
+          const friendRoom = this.getOrCreateRoom(bestFriendRoomId, now);
+          const label = this.getInstanceLabel(friendRoom.roomId);
+          return {
+            room: friendRoom,
+            placementReason: 'friend_priority',
+            placementNotice: `Placed in ${label} alongside ${bestFriendCount} online ${bestFriendCount === 1 ? 'friend' : 'friends'}!`
+          };
+        }
+      }
     }
 
-    const basePrefix = requestedRoomId.replace(/-\d+$/, '');
-    let overflowIdx = 2;
-    while (overflowIdx < 100) {
-      const candidateId = `${basePrefix}-${overflowIdx}`;
-      const room = this.getOrCreateRoom(candidateId, now);
-      if (room.activeSessions.size < room.maxPlayers) {
-        return room;
-      }
-      overflowIdx++;
+    // 2. Check requested room if healthy, not excluded, and under capacity
+    const primary = this.getOrCreateRoom(requestedRoomId, now);
+    const primaryHealthy = (primary.status ?? 'healthy') === 'healthy';
+    const primaryExcluded = Boolean(excludedRoomIds?.has(primary.roomId));
+    if (
+      primaryHealthy &&
+      !primaryExcluded &&
+      primary.activeSessions.size < primary.maxPlayers
+    ) {
+      return {
+        room: primary,
+        placementReason: 'requested'
+      };
     }
-    return primary;
+
+    // 3. Otherwise find the first healthy preset or overflow room with available capacity (FR-002, FR-005, FR-007)
+    const rawPrefix = requestedRoomId.replace(/-\d+$/, '');
+    const basePrefix = rawPrefix || 'panda-forest';
+    const candidateIds: string[] = [
+      ...DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId)
+    ];
+    for (let idx = 1; idx < 100; idx++) {
+      const cid = `${basePrefix}-${idx}`;
+      if (!candidateIds.includes(cid)) {
+        candidateIds.push(cid);
+      }
+    }
+
+    for (const candidateId of candidateIds) {
+      if (excludedRoomIds?.has(candidateId)) continue;
+      const room = this.getOrCreateRoom(candidateId, now);
+      if (
+        (room.status ?? 'healthy') === 'healthy' &&
+        room.activeSessions.size < room.maxPlayers
+      ) {
+        const label = this.getInstanceLabel(room.roomId);
+        const notice = !primaryHealthy
+          ? `Instance ${requestedRoomId} is currently unavailable; placed in ${label}.`
+          : `Instance ${requestedRoomId} is full (${primary.activeSessions.size}/${primary.maxPlayers}); placed in ${label}.`;
+        return {
+          room,
+          placementReason: !primaryHealthy ? 'failover_recovery' : 'overflow_redirect',
+          placementNotice: notice
+        };
+      }
+    }
+
+    const fallbackId = `panda-forest-recovery-${now}`;
+    const fallbackRoom = this.getOrCreateRoom(fallbackId, now);
+    return {
+      room: fallbackRoom,
+      placementReason: 'failover_recovery',
+      placementNotice: `Placed in recovery instance ${fallbackId}.`
+    };
+  }
+
+  /**
+   * Removes any duplicate active or resumable sessions for the same `playerId`
+   * across all instances so rapid transfers or multi-tab joins never leave ghost avatars (`FR-012`, `SC-003`).
+   */
+  public purgeDuplicatePlayerSessions(
+    playerId: string,
+    excludeSessionId?: string,
+    now = Date.now()
+  ): PlayerLeftMessage[] {
+    const leftBroadcasts: PlayerLeftMessage[] = [];
+    if (!playerId) return leftBroadcasts;
+
+    for (const room of this.rooms.values()) {
+      for (const [token, entry] of room.resumableSessions.entries()) {
+        if (
+          entry.record.playerId === playerId &&
+          entry.record.sessionId !== excludeSessionId
+        ) {
+          room.resumableSessions.delete(token);
+        }
+      }
+
+      for (const [sessId, session] of Array.from(room.activeSessions.entries())) {
+        if (session.playerId === playerId && sessId !== excludeSessionId) {
+          this.releasePlayerSeat(room, session, now);
+          this.getOrCreateEventEngine(room.roomId, now).removeParticipantSession(
+            sessId,
+            session.playerId
+          );
+          room.activeSessions.delete(sessId);
+          this.sessionToRoom.delete(sessId);
+          this.chatRateLimiter.clearSession(sessId);
+
+          leftBroadcasts.push({
+            type: 'player_left',
+            roomId: room.roomId,
+            sessionId: sessId,
+            reason: 'switched_room',
+            visitorCount: room.activeSessions.size,
+            serverTimestamp: now
+          });
+        }
+      }
+    }
+
+    return leftBroadcasts;
   }
 
   public computeSpawnPosition(spawnIndex: number): [number, number, number] {
@@ -486,23 +810,152 @@ export class ZooInstanceAuthority {
     return `${baseDisplayName} #${suffix}`;
   }
 
+  private getOrInitPlayerWallet(
+    playerId: string,
+    initialSnapshot?: unknown
+  ): { currencyBalance: number; inventory: FoodInventoryRecord } {
+    const existing = this.playerWallets.get(playerId);
+    if (existing) {
+      return existing;
+    }
+    const sanitized = sanitizeDiningWalletSnapshot(initialSnapshot);
+    const created = {
+      currencyBalance: sanitized.currencyBalance,
+      inventory: { ...sanitized.inventory }
+    };
+    this.playerWallets.set(playerId, created);
+    return created;
+  }
+
+  public getPlayerDiningWallet(playerId: string): {
+    currencyBalance: number;
+    inventory: FoodInventoryRecord;
+  } {
+    const wallet = this.getOrInitPlayerWallet(playerId);
+    return {
+      currencyBalance: wallet.currencyBalance,
+      inventory: { ...wallet.inventory }
+    };
+  }
+
+  private getOrInitDiscoveredSpeciesSet(playerId: string): Set<AnimalSpeciesId> {
+    let set = this.playerDiscoveredSpecies.get(playerId);
+    if (!set) {
+      set = new Set<AnimalSpeciesId>();
+      this.playerDiscoveredSpecies.set(playerId, set);
+    }
+    return set;
+  }
+
+  private getOrInitPlayerPassport(
+    playerId: string,
+    initialSnapshot?: unknown,
+    nowIso = new Date().toISOString()
+  ): PlayerPassportState {
+    const existing = this.playerPassports.get(playerId);
+    const incoming = initialSnapshot
+      ? sanitizePlayerPassportState(initialSnapshot, nowIso)
+      : null;
+
+    if (!existing) {
+      const created = incoming ?? createDefaultPassportState(nowIso);
+      this.playerPassports.set(playerId, created);
+      return created;
+    }
+
+    if (incoming) {
+      for (const zoneId of PASSPORT_ZONE_IDS) {
+        if (incoming.stamps[zoneId].obtained && !existing.stamps[zoneId].obtained) {
+          existing.stamps[zoneId] = { ...incoming.stamps[zoneId] };
+        }
+      }
+      for (const achId of ACHIEVEMENT_IDS) {
+        const incAch = incoming.achievements[achId];
+        const exAch = existing.achievements[achId];
+        if (incAch.progressCount > exAch.progressCount) {
+          exAch.progressCount = incAch.progressCount;
+        }
+        if (incAch.unlocked && !exAch.unlocked) {
+          exAch.unlocked = true;
+          exAch.unlockedAt = incAch.unlockedAt ?? nowIso;
+        }
+        if (incAch.claimed && !exAch.claimed) {
+          exAch.claimed = true;
+          exAch.claimedAt = incAch.claimedAt ?? nowIso;
+        }
+      }
+      existing.socialInteractionsCount = Math.max(
+        existing.socialInteractionsCount,
+        incoming.socialInteractionsCount
+      );
+      existing.activitiesCompletedCount = Math.max(
+        existing.activitiesCompletedCount,
+        incoming.activitiesCompletedCount
+      );
+      for (const badge of incoming.earnedBadges) {
+        if (!existing.earnedBadges.includes(badge)) {
+          existing.earnedBadges.push(badge);
+        }
+      }
+      if (!existing.activeBadge && incoming.activeBadge) {
+        existing.activeBadge = incoming.activeBadge;
+      }
+      const speciesSet = this.getOrInitDiscoveredSpeciesSet(playerId);
+      const evaluated = evaluatePassportAchievements(
+        existing,
+        speciesSet.size,
+        nowIso
+      ).state;
+      this.playerPassports.set(playerId, evaluated);
+      return evaluated;
+    }
+
+    return existing;
+  }
+
+  public getPlayerPassportState(playerId: string): PlayerPassportState {
+    const passport = this.getOrInitPlayerPassport(playerId);
+    return sanitizePlayerPassportState(passport, passport.updatedAt);
+  }
+
   public joinOrResumePlayer(params: {
     requestedRoomId?: string;
+    preferFriendPlacement?: boolean;
+    allowFriendJoin?: boolean;
     resumeToken?: string | null;
     playerId?: string;
     displayName?: string;
     avatar?: AvatarAppearance | unknown;
     friendPlayerIds?: string[];
     blockedPlayerIds?: string[];
+    diningWallet?: unknown;
+    passportState?: unknown;
+    deduplicatePlayerId?: boolean;
     now?: number;
   }): {
     welcome: WelcomeSnapshotMessage;
     joinedBroadcast: PlayerJoinedMessage;
+    purgedDuplicates?: PlayerLeftMessage[];
   } {
     const now = params.now ?? Date.now();
     const requestedRoomId = params.requestedRoomId ?? DEFAULT_ROOM_ID;
+    const preferFriendPlacement =
+      params.preferFriendPlacement ?? requestedRoomId === DEFAULT_ROOM_ID;
 
-    // 1. Check if resumeToken matches an active or grace-window session in any room
+    if (params.playerId && isValidPlayerId(params.playerId)) {
+      this.syncInitialSocialLists(
+        params.playerId,
+        params.friendPlayerIds,
+        params.blockedPlayerIds
+      );
+      if (typeof params.allowFriendJoin === 'boolean') {
+        this.playerPrivacy.set(params.playerId, {
+          allowFriendJoin: params.allowFriendJoin
+        });
+      }
+    }
+
+    // 1. Check if resumeToken matches an active or grace-window session in any healthy room
     if (params.resumeToken) {
       for (const room of this.rooms.values()) {
         this.pruneExpiredResumableTokens(room, now);
@@ -510,9 +963,17 @@ export class ZooInstanceAuthority {
         if (
           resumable &&
           now <= resumable.expiresAt &&
+          (room.status ?? 'healthy') === 'healthy' &&
           room.activeSessions.size < room.maxPlayers
         ) {
           room.resumableSessions.delete(params.resumeToken);
+          const purgedDuplicates = params.deduplicatePlayerId
+            ? this.purgeDuplicatePlayerSessions(
+                resumable.record.playerId,
+                resumable.record.sessionId,
+                now
+              )
+            : [];
 
           let baseDisplayName = resumable.record.baseDisplayName;
           if (
@@ -534,6 +995,21 @@ export class ZooInstanceAuthority {
             resumable.record.playerId
           );
 
+          const wallet = this.getOrInitPlayerWallet(
+            resumable.record.playerId,
+            params.diningWallet
+          );
+          this.getOrInitPlayerPassport(
+            resumable.record.playerId,
+            params.passportState,
+            new Date(now).toISOString()
+          );
+          if (typeof params.allowFriendJoin === 'boolean') {
+            this.playerPrivacy.set(resumable.record.playerId, {
+              allowFriendJoin: params.allowFriendJoin
+            });
+          }
+
           const resumedRecord: PlayerSessionRecord = {
             ...resumable.record,
             baseDisplayName,
@@ -543,6 +1019,9 @@ export class ZooInstanceAuthority {
             lastMoveAt: now,
             activeEmote: null,
             seatedOn: null,
+            currencyBalance: wallet.currencyBalance,
+            foodInventory: { ...wallet.inventory },
+            activeConsumption: null,
             transform: {
               ...resumable.record.transform,
               velocity: [0, 0, 0],
@@ -563,24 +1042,40 @@ export class ZooInstanceAuthority {
 
           const serializedSelf = serializePlayerRecord(resumedRecord);
           return {
-            welcome: this.buildWelcomeSnapshot(room, resumedRecord, true, now),
+            welcome: this.buildWelcomeSnapshot(room, resumedRecord, true, now, {
+              placementReason: 'requested'
+            }),
             joinedBroadcast: {
               type: 'player_joined',
               roomId: room.roomId,
               player: serializedSelf,
               visitorCount: room.activeSessions.size,
               serverTimestamp: now
-            }
+            },
+            purgedDuplicates
           };
         }
       }
     }
 
     // 2. Assign a fresh session in an available room
-    const room = this.selectAvailableRoom(requestedRoomId, now);
+    this.globalSessionCounter += 1;
+    const prelimPlayerId = isValidPlayerId(params.playerId)
+      ? params.playerId
+      : `pid_sess_${this.globalSessionCounter.toString(16).padStart(4, '0')}`;
+    const purgedDuplicates = params.deduplicatePlayerId
+      ? this.purgeDuplicatePlayerSessions(prelimPlayerId, undefined, now)
+      : [];
+
+    const selection = this.selectAvailableRoomWithReason(
+      requestedRoomId,
+      now,
+      prelimPlayerId,
+      preferFriendPlacement
+    );
+    const room = selection.room;
     this.pruneExpiredResumableTokens(room, now);
 
-    this.globalSessionCounter += 1;
     const visitorNum = room.nextVisitorNumber++;
     const sessionId = `sess_${this.globalSessionCounter.toString(16).padStart(4, '0')}_${visitorNum}`;
     const playerId = isValidPlayerId(params.playerId) ? params.playerId : `pid_${sessionId}`;
@@ -616,6 +1111,17 @@ export class ZooInstanceAuthority {
     const spawnIndex = room.activeSessions.size;
     const spawnPosition = this.computeSpawnPosition(spawnIndex);
     const spawnYaw = Math.PI; // Facing North (-Z) down the Panda Forest trail
+    const wallet = this.getOrInitPlayerWallet(playerId, params.diningWallet);
+    this.getOrInitPlayerPassport(
+      playerId,
+      params.passportState,
+      new Date(now).toISOString()
+    );
+    if (typeof params.allowFriendJoin === 'boolean') {
+      this.playerPrivacy.set(playerId, {
+        allowFriendJoin: params.allowFriendJoin
+      });
+    }
 
     const record: PlayerSessionRecord = {
       sessionId,
@@ -632,6 +1138,9 @@ export class ZooInstanceAuthority {
       lastMoveAt: now,
       activeEmote: null,
       seatedOn: null,
+      currencyBalance: wallet.currencyBalance,
+      foodInventory: { ...wallet.inventory },
+      activeConsumption: null,
       transform: {
         position: [spawnPosition[0], spawnPosition[1], spawnPosition[2]],
         velocity: [0, 0, 0],
@@ -650,14 +1159,20 @@ export class ZooInstanceAuthority {
     this.syncInitialSocialLists(playerId, params.friendPlayerIds, params.blockedPlayerIds);
 
     return {
-      welcome: this.buildWelcomeSnapshot(room, record, false, now),
+      welcome: this.buildWelcomeSnapshot(room, record, false, now, {
+        placementReason: selection.placementReason,
+        ...(selection.placementNotice !== undefined
+          ? { placementNotice: selection.placementNotice }
+          : {})
+      }),
       joinedBroadcast: {
         type: 'player_joined',
         roomId: room.roomId,
         player: serializePlayerRecord(record),
         visitorCount: room.activeSessions.size,
         serverTimestamp: now
-      }
+      },
+      purgedDuplicates
     };
   }
 
@@ -792,7 +1307,11 @@ export class ZooInstanceAuthority {
     room: ZooInstanceRoom,
     selfRecord: PlayerSessionRecord,
     resumed: boolean,
-    now: number
+    now: number,
+    placementMeta?: {
+      placementReason?: InstancePlacementReason;
+      placementNotice?: string;
+    }
   ): WelcomeSnapshotMessage {
     const players: SerializedPlayerState[] = [];
     for (const session of room.activeSessions.values()) {
@@ -835,9 +1354,22 @@ export class ZooInstanceAuthority {
       players,
       propStates,
       seatStates,
-      availableInstances: this.getAvailableInstances(),
+      availableInstances: this.getAvailableInstances(selfRecord.playerId),
+      ...(placementMeta?.placementReason !== undefined
+        ? { placementReason: placementMeta.placementReason }
+        : {}),
+      ...(placementMeta?.placementNotice !== undefined
+        ? { placementNotice: placementMeta.placementNotice }
+        : {}),
+      allowFriendJoin: this.getPlayerAllowFriendJoin(selfRecord.playerId),
       animals: this.getOrCreateAnimalSystem(room.roomId, now).getAnimals(),
-      habitatFeedings: this.getOrCreateAnimalSystem(room.roomId, now).getHabitatFeedings()
+      habitatFeedings: this.getOrCreateAnimalSystem(room.roomId, now).getHabitatFeedings(),
+      diningWallet: {
+        currencyBalance: selfRecord.currencyBalance ?? INITIAL_ZOO_COINS,
+        inventory: { ...(selfRecord.foodInventory ?? createEmptyFoodInventory()) }
+      },
+      passportState: this.getPlayerPassportState(selfRecord.playerId),
+      zooEvents: this.getRoomEventsSnapshot(room.roomId, now)
     };
   }
 
@@ -965,6 +1497,22 @@ export class ZooInstanceAuthority {
       discrepancyDistance
     };
 
+    const currentPassport = this.getOrInitPlayerPassport(session.playerId);
+    const speciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    const proxRes = evaluateProximityZoneStamp(
+      [finalX, finalY, finalZ],
+      currentPassport,
+      speciesSet.size,
+      new Date(now).toISOString(),
+      null
+    );
+    if (
+      proxRes.newlyStampedZoneIds.length > 0 ||
+      proxRes.newlyUnlockedAchievementIds.length > 0
+    ) {
+      this.playerPassports.set(session.playerId, proxRes.state);
+    }
+
     return {
       accepted: true,
       state: serializePlayerRecord(session),
@@ -1049,6 +1597,18 @@ export class ZooInstanceAuthority {
       room.recentChatHistory.splice(0, room.recentChatHistory.length - MAX_CHAT_HISTORY_ENTRIES);
     }
 
+    const senderPassport = this.getOrInitPlayerPassport(sender.playerId);
+    const senderSpeciesSet = this.getOrInitDiscoveredSpeciesSet(sender.playerId);
+    this.playerPassports.set(
+      sender.playerId,
+      recordPassportSocialInteraction(
+        senderPassport,
+        senderSpeciesSet.size,
+        new Date(now).toISOString(),
+        null
+      ).state
+    );
+
     const recipientSessionIds: string[] = [];
     for (const target of room.activeSessions.values()) {
       if (this.isPlayerBlocked(target.playerId, sender.playerId)) {
@@ -1104,6 +1664,17 @@ export class ZooInstanceAuthority {
         startedAt: now,
         expiresAt: now + desc.durationMs
       };
+      const senderPassport = this.getOrInitPlayerPassport(sender.playerId);
+      const senderSpeciesSet = this.getOrInitDiscoveredSpeciesSet(sender.playerId);
+      this.playerPassports.set(
+        sender.playerId,
+        recordPassportSocialInteraction(
+          senderPassport,
+          senderSpeciesSet.size,
+          new Date(now).toISOString(),
+          null
+        ).state
+      );
     }
 
     sender.activeEmote = activeEmote;
@@ -1310,6 +1881,18 @@ export class ZooInstanceAuthority {
       propState.lastTriggeredAt = now;
     }
 
+    const seatedPassport = this.getOrInitPlayerPassport(session.playerId);
+    const seatedSpeciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    this.playerPassports.set(
+      session.playerId,
+      recordPassportSocialInteraction(
+        seatedPassport,
+        seatedSpeciesSet.size,
+        new Date(now).toISOString(),
+        null
+      ).state
+    );
+
     const seatUpdate: SeatStateUpdatedMessage = {
       type: 'seat_state_updated',
       roomId: room.roomId,
@@ -1425,6 +2008,8 @@ export class ZooInstanceAuthority {
       const activeRoom = activeSession ? this.rooms.get(activeSession.roomId) : undefined;
       const roomVisitorCount = activeRoom ? activeRoom.activeSessions.size : 0;
       const roomMaxPlayers = activeRoom ? activeRoom.maxPlayers : this.maxPlayersPerRoom;
+      const roomStatus: ZooInstanceHealthStatus = activeRoom?.status ?? 'healthy';
+      const friendAllowJoin = this.getPlayerAllowFriendJoin(friendId);
       const displayName =
         activeSession?.baseDisplayName ??
         this.knownPlayerNames.get(friendId) ??
@@ -1437,7 +2022,14 @@ export class ZooInstanceAuthority {
         roomId: activeSession ? activeSession.roomId : null,
         roomVisitorCount,
         roomMaxPlayers,
-        canJoin: Boolean(activeSession && roomVisitorCount < roomMaxPlayers)
+        allowFriendJoin: friendAllowJoin,
+        roomStatus,
+        canJoin: Boolean(
+          activeSession &&
+            friendAllowJoin &&
+            roomStatus === 'healthy' &&
+            roomVisitorCount < roomMaxPlayers
+        )
       });
     }
 
@@ -1460,7 +2052,8 @@ export class ZooInstanceAuthority {
       incomingRequests,
       outgoingRequests,
       blockedPlayerIds: Array.from(blockSet),
-      availableInstances: this.getAvailableInstances(),
+      allowFriendJoin: this.getPlayerAllowFriendJoin(playerId),
+      availableInstances: this.getAvailableInstances(playerId),
       serverTimestamp: now
     };
   }
@@ -1691,12 +2284,20 @@ export class ZooInstanceAuthority {
       };
     }
 
-    const targetRoom = this.rooms.get(friendSession.roomId);
-    if (!targetRoom) {
+    if (!this.getPlayerAllowFriendJoin(msg.friendPlayerId)) {
       return {
         accepted: false,
-        errorCode: 'FRIEND_REQUEST_INVALID',
-        errorMessage: 'Friend instance is unavailable.'
+        errorCode: 'FRIEND_JOIN_DISABLED',
+        errorMessage: `${friendSession.displayName} has disabled "Allow Friends to Join My Instance".`
+      };
+    }
+
+    const targetRoom = this.rooms.get(friendSession.roomId);
+    if (!targetRoom || (targetRoom.status ?? 'healthy') !== 'healthy') {
+      return {
+        accepted: false,
+        errorCode: 'INSTANCE_UNAVAILABLE',
+        errorMessage: "Friend's zoo instance is currently unavailable."
       };
     }
 
@@ -1718,6 +2319,10 @@ export class ZooInstanceAuthority {
     }
 
     const seatReleasedOldRoom = this.releasePlayerSeat(currentRoom, session, now);
+    this.getOrCreateEventEngine(currentRoom.roomId, now).removeParticipantSession(
+      sessionId,
+      session.playerId
+    );
     currentRoom.activeSessions.delete(sessionId);
 
     const leftOldRoomBroadcast: PlayerLeftMessage = {
@@ -1764,6 +2369,7 @@ export class ZooInstanceAuthority {
 
     targetRoom.activeSessions.set(sessionId, session);
     this.sessionToRoom.set(sessionId, targetRoom.roomId);
+    this.pruneEmptyOverflowRooms(now);
 
     const welcome = this.buildWelcomeSnapshot(targetRoom, session, false, now);
     const joinedNewRoomBroadcast: PlayerJoinedMessage = {
@@ -1833,6 +2439,14 @@ export class ZooInstanceAuthority {
     }
 
     const targetRoom = this.getOrCreateRoom(requestedRoomId, now);
+    if ((targetRoom.status ?? 'healthy') !== 'healthy') {
+      return {
+        accepted: false,
+        errorCode: 'INSTANCE_UNAVAILABLE',
+        errorMessage: `Instance ${requestedRoomId} is currently unavailable.`
+      };
+    }
+
     if (targetRoom.activeSessions.size >= targetRoom.maxPlayers) {
       return {
         accepted: false,
@@ -1842,6 +2456,10 @@ export class ZooInstanceAuthority {
     }
 
     const seatReleasedOldRoom = this.releasePlayerSeat(currentRoom, session, now);
+    this.getOrCreateEventEngine(currentRoom.roomId, now).removeParticipantSession(
+      sessionId,
+      session.playerId
+    );
     currentRoom.activeSessions.delete(sessionId);
 
     const leftOldRoomBroadcast: PlayerLeftMessage = {
@@ -1881,6 +2499,7 @@ export class ZooInstanceAuthority {
 
     targetRoom.activeSessions.set(sessionId, session);
     this.sessionToRoom.set(sessionId, targetRoom.roomId);
+    this.pruneEmptyOverflowRooms(now);
 
     const welcome = this.buildWelcomeSnapshot(targetRoom, session, false, now);
     const joinedNewRoomBroadcast: PlayerJoinedMessage = {
@@ -1900,6 +2519,204 @@ export class ZooInstanceAuthority {
       seatReleasedOldRoom,
       welcome,
       joinedNewRoomBroadcast
+    };
+  }
+
+  /**
+   * Updates whether online friends are permitted to directly join this player's instance (`FR-009`, `FR-010`, `SC-002`).
+   */
+  public setSocialPrivacy(
+    sessionId: string,
+    msg: SetSocialPrivacyMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    playerId: string | null;
+    allowFriendJoin: boolean;
+    affectedPlayerIds: string[];
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        playerId: null,
+        allowFriendJoin: true,
+        affectedPlayerIds: []
+      };
+    }
+
+    this.playerPrivacy.set(session.playerId, {
+      allowFriendJoin: msg.allowFriendJoin
+    });
+    const friendIds = Array.from(this.getOrCreateFriendSet(session.playerId));
+    return {
+      accepted: true,
+      playerId: session.playerId,
+      allowFriendJoin: msg.allowFriendJoin,
+      affectedPlayerIds: [session.playerId, ...friendIds]
+    };
+  }
+
+  /**
+   * Runtime instance capacity and health configuration (`FR-004`, `FR-007`, `FR-008`, `SC-001`, `SC-005`).
+   * When an instance is marked `'unhealthy'`, all active sessions in that room are automatically
+   * migrated to a healthy available instance while preserving identity, wallet, and passport state.
+   */
+  public configureInstance(
+    sessionId: string | null,
+    msg: ConfigureInstanceMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    roomId: string;
+    maxPlayers: number;
+    status: ZooInstanceHealthStatus;
+    directoryUpdate: InstanceDirectoryUpdateMessage;
+    migratedSessions: Array<{
+      sessionId: string;
+      playerId: string;
+      oldRoomId: string;
+      newRoomId: string;
+      leftOldRoomBroadcast: PlayerLeftMessage;
+      welcome: WelcomeSnapshotMessage;
+      joinedNewRoomBroadcast: PlayerJoinedMessage;
+    }>;
+    errorCode?: ErrorNoticeMessage['code'];
+    errorMessage?: string;
+  } {
+    if (sessionId) {
+      this.ensureSessionActive(sessionId, now);
+    }
+
+    const roomId = msg.roomId.trim() || DEFAULT_ROOM_ID;
+    const room = this.getOrCreateRoom(roomId, now);
+    this.configuredRoomIds.add(roomId);
+
+    if (
+      msg.maxPlayers !== undefined &&
+      Number.isFinite(msg.maxPlayers) &&
+      msg.maxPlayers >= 1 &&
+      msg.maxPlayers <= 128
+    ) {
+      room.maxPlayers = Math.floor(msg.maxPlayers);
+    }
+
+    if (msg.status === 'healthy' || msg.status === 'unhealthy') {
+      room.status = msg.status;
+    }
+
+    const migratedSessions: Array<{
+      sessionId: string;
+      playerId: string;
+      oldRoomId: string;
+      newRoomId: string;
+      leftOldRoomBroadcast: PlayerLeftMessage;
+      welcome: WelcomeSnapshotMessage;
+      joinedNewRoomBroadcast: PlayerJoinedMessage;
+    }> = [];
+
+    if ((room.status ?? 'healthy') === 'unhealthy') {
+      room.resumableSessions.clear();
+      const sessionsToEvacuate = Array.from(room.activeSessions.values());
+      const excluded = new Set<string>([room.roomId]);
+
+      for (const session of sessionsToEvacuate) {
+        this.releasePlayerSeat(room, session, now);
+        this.getOrCreateEventEngine(room.roomId, now).removeParticipantSession(
+          session.sessionId,
+          session.playerId
+        );
+        room.activeSessions.delete(session.sessionId);
+
+        const leftOldRoomBroadcast: PlayerLeftMessage = {
+          type: 'player_left',
+          roomId: room.roomId,
+          sessionId: session.sessionId,
+          reason: 'switched_room',
+          visitorCount: room.activeSessions.size,
+          serverTimestamp: now
+        };
+
+        const selection = this.selectAvailableRoomWithReason(
+          DEFAULT_ROOM_ID,
+          now,
+          session.playerId,
+          true,
+          excluded
+        );
+        const targetRoom = selection.room;
+        const spawnIndex = targetRoom.activeSessions.size;
+        const spawnPos = this.computeSpawnPosition(spawnIndex);
+
+        session.roomId = targetRoom.roomId;
+        session.spawnIndex = spawnIndex;
+        session.displayName = this.disambiguateDisplayName(
+          targetRoom,
+          session.baseDisplayName,
+          session.sessionId,
+          session.playerId
+        );
+        session.activeEmote = null;
+        session.seatedOn = null;
+        session.lastHeartbeatAt = now;
+        session.lastMoveAt = now;
+        session.transform = {
+          ...session.transform,
+          position: [spawnPos[0], spawnPos[1], spawnPos[2]],
+          velocity: [0, 0, 0],
+          facingYaw: Math.PI,
+          locomotionState: 'Idle',
+          serverTimestamp: now,
+          reconciled: false,
+          discrepancyDistance: 0
+        };
+
+        targetRoom.activeSessions.set(session.sessionId, session);
+        this.sessionToRoom.set(session.sessionId, targetRoom.roomId);
+
+        const recoveryNotice = `Instance ${room.roomId} became unavailable. You were safely moved to ${this.getInstanceLabel(targetRoom.roomId)} with all progress intact.`;
+        const welcome = this.buildWelcomeSnapshot(targetRoom, session, false, now, {
+          placementReason: 'failover_recovery',
+          placementNotice: recoveryNotice
+        });
+        const joinedNewRoomBroadcast: PlayerJoinedMessage = {
+          type: 'player_joined',
+          roomId: targetRoom.roomId,
+          player: serializePlayerRecord(session),
+          visitorCount: targetRoom.activeSessions.size,
+          serverTimestamp: now
+        };
+
+        migratedSessions.push({
+          sessionId: session.sessionId,
+          playerId: session.playerId,
+          oldRoomId: room.roomId,
+          newRoomId: targetRoom.roomId,
+          leftOldRoomBroadcast,
+          welcome,
+          joinedNewRoomBroadcast
+        });
+      }
+    }
+
+    const status: ZooInstanceHealthStatus = room.status ?? 'healthy';
+    const notice =
+      status === 'unhealthy'
+        ? `Instance ${room.roomId} marked unavailable; ${migratedSessions.length} visitor(s) safely evacuated.`
+        : `Instance ${room.roomId} configured (${room.activeSessions.size}/${room.maxPlayers} capacity, status: Healthy).`;
+
+    return {
+      accepted: true,
+      roomId: room.roomId,
+      maxPlayers: room.maxPlayers,
+      status,
+      directoryUpdate: {
+        type: 'instance_directory_update',
+        availableInstances: this.getAvailableInstances(),
+        notice,
+        serverTimestamp: now
+      },
+      migratedSessions
     };
   }
 
@@ -2057,6 +2874,18 @@ export class ZooInstanceAuthority {
       };
     }
 
+    const feedingPassport = this.getOrInitPlayerPassport(session.playerId);
+    const feedingSpeciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    this.playerPassports.set(
+      session.playerId,
+      recordPassportActivityCompletion(
+        feedingPassport,
+        feedingSpeciesSet.size,
+        new Date(now).toISOString(),
+        null
+      ).state
+    );
+
     return {
       accepted: true,
       broadcast: {
@@ -2065,6 +2894,791 @@ export class ZooInstanceAuthority {
         habitatId: msg.habitatId,
         feedingState: res.feedingState,
         animals: res.animals,
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Authoritatively validates a food or drink purchase (`FR-004`–`FR-006`, `SC-002`, Principle III).
+   * Enforces currency balance verification and `requestId` idempotency so duplicate packets never double-charge.
+   */
+  public purchaseFoodItem(
+    sessionId: string,
+    msg: PurchaseFoodItemMessage,
+    now = Date.now()
+  ): FoodPurchaseResultMessage {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        type: 'food_purchase_result',
+        requestId: msg.requestId,
+        success: false,
+        itemId: msg.itemId,
+        currencyBalance: INITIAL_ZOO_COINS,
+        inventory: createEmptyFoodInventory(),
+        errorCode: 'INVALID_ITEM',
+        message: 'Session not active.',
+        serverTimestamp: now
+      };
+    }
+
+    const wallet = this.getOrInitPlayerWallet(session.playerId, {
+      currencyBalance: session.currencyBalance,
+      inventory: session.foodInventory
+    });
+
+    const idempotencyKey = `${session.playerId}:${msg.requestId}`;
+    const existingResult = this.processedPurchaseRequests.get(idempotencyKey);
+    if (existingResult) {
+      return {
+        ...existingResult,
+        inventory: { ...existingResult.inventory }
+      };
+    }
+
+    if (!isValidFoodItemId(msg.itemId)) {
+      return {
+        type: 'food_purchase_result',
+        requestId: msg.requestId,
+        success: false,
+        itemId: msg.itemId,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        errorCode: 'INVALID_ITEM',
+        message: 'Selected food or drink is not on the stall menu.',
+        serverTimestamp: now
+      };
+    }
+
+    const item = FOOD_CATALOG_BY_ID[msg.itemId];
+    if (wallet.currencyBalance < item.price) {
+      return {
+        type: 'food_purchase_result',
+        requestId: msg.requestId,
+        success: false,
+        itemId: item.id,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        errorCode: 'INSUFFICIENT_FUNDS',
+        message: `Not enough Zoo Coins for ${item.name} (costs ${item.price}, you have ${wallet.currencyBalance}).`,
+        serverTimestamp: now
+      };
+    }
+
+    const currentQty = wallet.inventory[item.id] ?? 0;
+    if (currentQty >= MAX_FOOD_ITEM_QUANTITY) {
+      return {
+        type: 'food_purchase_result',
+        requestId: msg.requestId,
+        success: false,
+        itemId: item.id,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        errorCode: 'INVENTORY_FULL',
+        message: `Your bag is full of ${item.name} (max ${MAX_FOOD_ITEM_QUANTITY}).`,
+        serverTimestamp: now
+      };
+    }
+
+    wallet.currencyBalance -= item.price;
+    wallet.inventory[item.id] = currentQty + 1;
+    session.currencyBalance = wallet.currencyBalance;
+    session.foodInventory = { ...wallet.inventory };
+
+    const successResult: FoodPurchaseResultMessage = {
+      type: 'food_purchase_result',
+      requestId: msg.requestId,
+      success: true,
+      itemId: item.id,
+      currencyBalance: wallet.currencyBalance,
+      inventory: { ...wallet.inventory },
+      message: `Purchased ${item.name} (-${item.price} Zoo Coins)!`,
+      serverTimestamp: now
+    };
+    this.processedPurchaseRequests.set(idempotencyKey, {
+      ...successResult,
+      inventory: { ...successResult.inventory }
+    });
+    return successResult;
+  }
+
+  /**
+   * Authoritatively validates and consumes an owned food or drink item (`FR-007`–`FR-011`, `SC-004`).
+   */
+  public consumeFoodItem(
+    sessionId: string,
+    msg: ConsumeFoodItemMessage,
+    now = Date.now()
+  ): {
+    result: FoodConsumeResultMessage;
+    broadcast: PlayerConsumptionUpdatedMessage | null;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        result: {
+          type: 'food_consume_result',
+          success: false,
+          itemId: msg.itemId,
+          currencyBalance: INITIAL_ZOO_COINS,
+          inventory: createEmptyFoodInventory(),
+          errorCode: 'INVALID_ITEM',
+          message: 'Session not active.',
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    const wallet = this.getOrInitPlayerWallet(session.playerId, {
+      currencyBalance: session.currencyBalance,
+      inventory: session.foodInventory
+    });
+
+    if (!isValidFoodItemId(msg.itemId)) {
+      return {
+        result: {
+          type: 'food_consume_result',
+          success: false,
+          itemId: msg.itemId,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'INVALID_ITEM',
+          message: 'Invalid food or drink item.',
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    const item = FOOD_CATALOG_BY_ID[msg.itemId];
+    const currentQty = wallet.inventory[item.id] ?? 0;
+    if (currentQty <= 0) {
+      return {
+        result: {
+          type: 'food_consume_result',
+          success: false,
+          itemId: item.id,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'ITEM_NOT_OWNED',
+          message: `You do not own any ${item.name} in your bag.`,
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    wallet.inventory[item.id] = currentQty - 1;
+    session.currencyBalance = wallet.currencyBalance;
+    session.foodInventory = { ...wallet.inventory };
+
+    const consumption: ActiveFoodConsumption = {
+      itemId: item.id,
+      label: item.name,
+      category: item.category,
+      icon: item.icon,
+      startedAt: now,
+      expiresAt: now + item.durationMs
+    };
+    session.activeConsumption = consumption;
+
+    const currentPassport = this.getOrInitPlayerPassport(session.playerId);
+    const speciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    const actRes = recordPassportActivityCompletion(
+      currentPassport,
+      speciesSet.size,
+      new Date(now).toISOString(),
+      null
+    );
+    this.playerPassports.set(session.playerId, actRes.state);
+
+    return {
+      result: {
+        type: 'food_consume_result',
+        success: true,
+        itemId: item.id,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        consumption: { ...consumption },
+        message: `${item.gerundLabel} ${item.name}!`,
+        serverTimestamp: now
+      },
+      broadcast: {
+        type: 'player_consumption_updated',
+        roomId: room.roomId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+        consumption: { ...consumption },
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Stops active food or drink consumption early (`FR-011`).
+   */
+  public stopConsumingFood(
+    sessionId: string,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    broadcast: PlayerConsumptionUpdatedMessage | null;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return { accepted: false, broadcast: null };
+    }
+    session.activeConsumption = null;
+    return {
+      accepted: true,
+      broadcast: {
+        type: 'player_consumption_updated',
+        roomId: room.roomId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+        consumption: null,
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Records a zone stamp, species discovery, social action, or activity completion
+   * on the player's authoritative Zoo Passport (`FR-001`–`FR-007`).
+   */
+  public recordPassportProgress(
+    sessionId: string,
+    msg: RecordPassportProgressMessage,
+    now = Date.now()
+  ): PlayerPassportState | null {
+    const { session } = this.ensureSessionActive(sessionId, now);
+    if (!session) return null;
+
+    const nowIso = new Date(now).toISOString();
+    const speciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    if (
+      typeof msg.speciesId === 'string' &&
+      (ANIMAL_SPECIES_IDS as readonly string[]).includes(msg.speciesId)
+    ) {
+      speciesSet.add(msg.speciesId);
+    }
+
+    let passport = this.getOrInitPlayerPassport(session.playerId, undefined, nowIso);
+    if (msg.zoneId && isValidPassportZoneId(msg.zoneId)) {
+      passport = recordPassportZoneStamp(
+        passport,
+        msg.zoneId,
+        speciesSet.size,
+        nowIso,
+        null
+      ).state;
+    }
+    if (msg.socialAction) {
+      passport = recordPassportSocialInteraction(
+        passport,
+        speciesSet.size,
+        nowIso,
+        null
+      ).state;
+    }
+    if (msg.activityCompleted) {
+      passport = recordPassportActivityCompletion(
+        passport,
+        speciesSet.size,
+        nowIso,
+        null
+      ).state;
+    }
+
+    passport = evaluatePassportAchievements(
+      passport,
+      speciesSet.size,
+      nowIso
+    ).state;
+    this.playerPassports.set(session.playerId, passport);
+    return sanitizePlayerPassportState(passport, nowIso);
+  }
+
+  /**
+   * Authoritatively validates and grants an achievement reward (`FR-008`–`FR-010`, `SC-005`).
+   * Guarantees one-time reward claiming and `requestId` idempotency so duplicate requests never double-grant coins.
+   */
+  public claimAchievementReward(
+    sessionId: string,
+    msg: ClaimAchievementRewardMessage,
+    now = Date.now()
+  ): AchievementRewardResultMessage {
+    const nowIso = new Date(now).toISOString();
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        type: 'achievement_reward_result',
+        requestId: msg.requestId,
+        success: false,
+        achievementId: msg.achievementId,
+        rewardCoinsGranted: 0,
+        currencyBalance: INITIAL_ZOO_COINS,
+        passportState: createDefaultPassportState(nowIso),
+        errorCode: 'INVALID_ACHIEVEMENT',
+        message: 'Session not active.',
+        serverTimestamp: now
+      };
+    }
+
+    const wallet = this.getOrInitPlayerWallet(session.playerId, {
+      currencyBalance: session.currencyBalance,
+      inventory: session.foodInventory
+    });
+    const speciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    let passport = evaluatePassportAchievements(
+      this.getOrInitPlayerPassport(session.playerId, undefined, nowIso),
+      speciesSet.size,
+      nowIso
+    ).state;
+    this.playerPassports.set(session.playerId, passport);
+
+    const idempotencyKey = `${session.playerId}:${msg.requestId}`;
+    const existingClaim = this.processedRewardClaims.get(idempotencyKey);
+    if (existingClaim) {
+      return {
+        ...existingClaim,
+        passportState: sanitizePlayerPassportState(
+          existingClaim.passportState,
+          nowIso
+        )
+      };
+    }
+
+    if (!isValidAchievementId(msg.achievementId)) {
+      return {
+        type: 'achievement_reward_result',
+        requestId: msg.requestId,
+        success: false,
+        achievementId: msg.achievementId,
+        rewardCoinsGranted: 0,
+        currencyBalance: wallet.currencyBalance,
+        passportState: sanitizePlayerPassportState(passport, nowIso),
+        errorCode: 'INVALID_ACHIEVEMENT',
+        message: 'Selected achievement does not exist.',
+        serverTimestamp: now
+      };
+    }
+
+    const desc = ACHIEVEMENTS_BY_ID[msg.achievementId];
+    const rec = passport.achievements[msg.achievementId];
+
+    if (!rec.unlocked) {
+      return {
+        type: 'achievement_reward_result',
+        requestId: msg.requestId,
+        success: false,
+        achievementId: desc.achievementId,
+        rewardCoinsGranted: 0,
+        currencyBalance: wallet.currencyBalance,
+        passportState: sanitizePlayerPassportState(passport, nowIso),
+        errorCode: 'ACHIEVEMENT_LOCKED',
+        message: `${desc.title} has not been unlocked yet.`,
+        serverTimestamp: now
+      };
+    }
+
+    if (rec.claimed) {
+      return {
+        type: 'achievement_reward_result',
+        requestId: msg.requestId,
+        success: false,
+        achievementId: desc.achievementId,
+        rewardCoinsGranted: 0,
+        currencyBalance: wallet.currencyBalance,
+        passportState: sanitizePlayerPassportState(passport, nowIso),
+        errorCode: 'ALREADY_CLAIMED',
+        message: `Reward for ${desc.title} has already been claimed.`,
+        serverTimestamp: now
+      };
+    }
+
+    rec.claimed = true;
+    rec.claimedAt = nowIso;
+    if (!passport.earnedBadges.includes(desc.rewardBadge)) {
+      passport.earnedBadges.push(desc.rewardBadge);
+    }
+    if (!passport.activeBadge) {
+      passport.activeBadge = desc.rewardBadge;
+    }
+    passport.updatedAt = nowIso;
+    this.playerPassports.set(session.playerId, passport);
+
+    wallet.currencyBalance += desc.rewardCoins;
+    session.currencyBalance = wallet.currencyBalance;
+
+    const successResult: AchievementRewardResultMessage = {
+      type: 'achievement_reward_result',
+      requestId: msg.requestId,
+      success: true,
+      achievementId: desc.achievementId,
+      rewardCoinsGranted: desc.rewardCoins,
+      rewardBadgeGranted: desc.rewardBadge,
+      currencyBalance: wallet.currencyBalance,
+      passportState: sanitizePlayerPassportState(passport, nowIso),
+      message: `Claimed +${desc.rewardCoins} Zoo Coins & "${desc.rewardBadge}" Badge!`,
+      serverTimestamp: now
+    };
+
+    this.processedRewardClaims.set(idempotencyKey, {
+      ...successResult,
+      passportState: sanitizePlayerPassportState(passport, nowIso)
+    });
+
+    return successResult;
+  }
+
+  /**
+   * Authoritatively joins a visitor into an active zoo event (`FR-003`–`FR-006`, `SC-002`).
+   * Enforces `maxParticipants` capacity limits and broadcasts live participant counts.
+   */
+  public joinZooEvent(
+    sessionId: string,
+    msg: JoinZooEventMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    broadcast: ZooEventsSnapshotMessage | null;
+    errorCode?: EventErrorCode;
+    errorMessage?: string;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: 'INVALID_EVENT',
+        errorMessage: 'Session not active.'
+      };
+    }
+
+    const engine = this.getOrCreateEventEngine(room.roomId, now);
+    const res = engine.joinEvent(session.sessionId, session.playerId, msg.eventId);
+    if (!res.ok) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: res.code,
+        errorMessage: res.message
+      };
+    }
+
+    return {
+      accepted: true,
+      broadcast: {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: engine.getSeasonalTheme(),
+        events: engine.getEventsSnapshot(),
+        notice: res.notice,
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Authoritatively removes a visitor from a zoo event (`FR-005`, `FR-006`, `SC-002`).
+   */
+  public leaveZooEvent(
+    sessionId: string,
+    msg: LeaveZooEventMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    broadcast: ZooEventsSnapshotMessage | null;
+    errorCode?: EventErrorCode;
+    errorMessage?: string;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: 'INVALID_EVENT',
+        errorMessage: 'Session not active.'
+      };
+    }
+
+    const engine = this.getOrCreateEventEngine(room.roomId, now);
+    const res = engine.leaveEvent(session.sessionId, session.playerId, msg.eventId);
+    if (!res.ok) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: res.code,
+        errorMessage: res.message
+      };
+    }
+
+    return {
+      accepted: true,
+      broadcast: {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: engine.getSeasonalTheme(),
+        events: engine.getEventsSnapshot(),
+        notice: res.notice,
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Contributes to an active zoo event's shared group progress (`FR-006`, `SC-002`).
+   */
+  public performEventAction(
+    sessionId: string,
+    msg: PerformEventActionMessage,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    broadcast: ZooEventsSnapshotMessage | null;
+    errorCode?: EventErrorCode;
+    errorMessage?: string;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: 'INVALID_EVENT',
+        errorMessage: 'Session not active.'
+      };
+    }
+
+    const engine = this.getOrCreateEventEngine(room.roomId, now);
+    const res = engine.performEventAction(
+      session.sessionId,
+      session.playerId,
+      msg.eventId
+    );
+    if (!res.ok) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: res.code,
+        errorMessage: res.message
+      };
+    }
+
+    return {
+      accepted: true,
+      broadcast: {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: engine.getSeasonalTheme(),
+        events: engine.getEventsSnapshot(),
+        notice: res.notice,
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Authoritatively claims a one-time reward for participating in a zoo event (`FR-007`–`FR-008`, `SC-003`).
+   * Grants Zoo Coins, stamps the corresponding Zoo Passport zone, increments `activitiesCompletedCount`,
+   * and enforces both `requestId` and `(playerId, eventInstanceId)` idempotency.
+   */
+  public claimEventReward(
+    sessionId: string,
+    msg: ClaimEventRewardMessage,
+    now = Date.now()
+  ): {
+    result: EventRewardResultMessage;
+    broadcast: ZooEventsSnapshotMessage | null;
+  } {
+    const nowIso = new Date(now).toISOString();
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        result: {
+          type: 'event_reward_result',
+          requestId: msg.requestId,
+          success: false,
+          eventId: msg.eventId,
+          eventInstanceId: `evinst_${msg.eventId}_1`,
+          rewardCoinsGranted: 0,
+          currencyBalance: INITIAL_ZOO_COINS,
+          passportState: createDefaultPassportState(nowIso),
+          errorCode: 'INVALID_EVENT',
+          message: 'Session not active.',
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    const wallet = this.getOrInitPlayerWallet(session.playerId, {
+      currencyBalance: session.currencyBalance,
+      inventory: session.foodInventory
+    });
+    const speciesSet = this.getOrInitDiscoveredSpeciesSet(session.playerId);
+    let passport = this.getOrInitPlayerPassport(session.playerId, undefined, nowIso);
+
+    const idempotencyKey = `${session.playerId}:${msg.requestId}`;
+    const existingClaim = this.processedEventRewardClaims.get(idempotencyKey);
+    if (existingClaim) {
+      return {
+        result: {
+          ...existingClaim,
+          passportState: sanitizePlayerPassportState(
+            existingClaim.passportState,
+            nowIso
+          )
+        },
+        broadcast: null
+      };
+    }
+
+    if (!isValidZooEventId(msg.eventId)) {
+      return {
+        result: {
+          type: 'event_reward_result',
+          requestId: msg.requestId,
+          success: false,
+          eventId: msg.eventId,
+          eventInstanceId: `evinst_${String(msg.eventId)}_1`,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePlayerPassportState(passport, nowIso),
+          errorCode: 'INVALID_EVENT',
+          message: 'Unknown zoo event.',
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    const engine = this.getOrCreateEventEngine(room.roomId, now);
+    const currentEvState = engine.getEventState(msg.eventId);
+    const markRes = engine.markRewardClaimed(session.playerId, msg.eventId);
+
+    if (!markRes.ok) {
+      return {
+        result: {
+          type: 'event_reward_result',
+          requestId: msg.requestId,
+          success: false,
+          eventId: msg.eventId,
+          eventInstanceId: currentEvState.eventInstanceId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePlayerPassportState(passport, nowIso),
+          errorCode: markRes.code,
+          message: markRes.message,
+          serverTimestamp: now
+        },
+        broadcast: null
+      };
+    }
+
+    wallet.currencyBalance += markRes.rewardCoins;
+    session.currencyBalance = wallet.currencyBalance;
+
+    passport = recordPassportZoneStamp(
+      passport,
+      markRes.zoneId,
+      speciesSet.size,
+      nowIso,
+      null
+    ).state;
+    passport = recordPassportActivityCompletion(
+      passport,
+      speciesSet.size,
+      nowIso,
+      null
+    ).state;
+    passport = evaluatePassportAchievements(
+      passport,
+      speciesSet.size,
+      nowIso
+    ).state;
+    this.playerPassports.set(session.playerId, passport);
+
+    const desc = ZOO_EVENTS_BY_ID[msg.eventId];
+    const zoneDesc = PASSPORT_ZONES_BY_ID[markRes.zoneId];
+    const message = `Claimed +${markRes.rewardCoins} Zoo Coins & ${zoneDesc.name} Stamp for "${desc.title}"!`;
+
+    const successResult: EventRewardResultMessage = {
+      type: 'event_reward_result',
+      requestId: msg.requestId,
+      success: true,
+      eventId: msg.eventId,
+      eventInstanceId: markRes.event.eventInstanceId,
+      rewardCoinsGranted: markRes.rewardCoins,
+      stampedZoneId: markRes.zoneId,
+      currencyBalance: wallet.currencyBalance,
+      passportState: sanitizePlayerPassportState(passport, nowIso),
+      message,
+      serverTimestamp: now
+    };
+
+    this.processedEventRewardClaims.set(idempotencyKey, {
+      ...successResult,
+      passportState: sanitizePlayerPassportState(passport, nowIso)
+    });
+
+    return {
+      result: successResult,
+      broadcast: {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: engine.getSeasonalTheme(),
+        events: engine.getEventsSnapshot(),
+        serverTimestamp: now
+      }
+    };
+  }
+
+  /**
+   * Authoritatively updates room seasonal themes or event schedules (`FR-009`–`FR-010`, `SC-004`).
+   * Safely rejects malformed configurations without disrupting active gameplay.
+   */
+  public configureZooEvents(
+    sessionId: string,
+    msg: ConfigureZooEventsMessage | unknown,
+    now = Date.now()
+  ): {
+    accepted: boolean;
+    broadcast: ZooEventsSnapshotMessage | null;
+    errorCode?: EventErrorCode;
+    errorMessage?: string;
+  } {
+    const { room, session } = this.ensureSessionActive(sessionId, now);
+    if (!room || !session) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: 'INVALID_EVENT_CONFIG',
+        errorMessage: 'Session not active.'
+      };
+    }
+
+    const engine = this.getOrCreateEventEngine(room.roomId, now);
+    const res = engine.applyAdminConfig(msg, now);
+    if (!res.ok) {
+      return {
+        accepted: false,
+        broadcast: null,
+        errorCode: res.code,
+        errorMessage: res.message
+      };
+    }
+
+    return {
+      accepted: true,
+      broadcast: {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: res.seasonalTheme,
+        events: res.events,
+        notice: res.notice,
         serverTimestamp: now
       }
     };
@@ -2084,17 +3698,33 @@ export class ZooInstanceAuthority {
   ): {
     left: PlayerLeftMessage | null;
     seatUpdate: SeatStateUpdatedMessage | null;
+    eventsUpdate?: ZooEventsSnapshotMessage | null;
     disconnectedPlayerId: string | null;
   } {
     const roomId = this.sessionToRoom.get(sessionId);
-    if (!roomId) return { left: null, seatUpdate: null, disconnectedPlayerId: null };
+    if (!roomId) return { left: null, seatUpdate: null, eventsUpdate: null, disconnectedPlayerId: null };
     const room = this.rooms.get(roomId);
-    if (!room) return { left: null, seatUpdate: null, disconnectedPlayerId: null };
+    if (!room) return { left: null, seatUpdate: null, eventsUpdate: null, disconnectedPlayerId: null };
 
     const session = room.activeSessions.get(sessionId);
-    if (!session) return { left: null, seatUpdate: null, disconnectedPlayerId: null };
+    if (!session) return { left: null, seatUpdate: null, eventsUpdate: null, disconnectedPlayerId: null };
 
     const seatUpdate = this.releasePlayerSeat(room, session, now);
+    const eventEngine = this.getOrCreateEventEngine(room.roomId, now);
+    const evRemoval = eventEngine.removeParticipantSession(
+      session.sessionId,
+      session.playerId
+    );
+    const eventsUpdate: ZooEventsSnapshotMessage | null = evRemoval.changed
+      ? {
+          type: 'zoo_events_snapshot',
+          roomId: room.roomId,
+          seasonalTheme: eventEngine.getSeasonalTheme(),
+          events: eventEngine.getEventsSnapshot(),
+          serverTimestamp: now
+        }
+      : null;
+
     this.chatRateLimiter.clearSession(sessionId);
     room.activeSessions.delete(sessionId);
     this.sessionToRoom.delete(sessionId);
@@ -2107,6 +3737,7 @@ export class ZooInstanceAuthority {
       });
     } else {
       room.resumableSessions.delete(session.resumeToken);
+      this.pruneEmptyOverflowRooms(now);
     }
 
     return {
@@ -2119,6 +3750,7 @@ export class ZooInstanceAuthority {
         serverTimestamp: now
       },
       seatUpdate,
+      eventsUpdate,
       disconnectedPlayerId: session.playerId
     };
   }
@@ -2127,6 +3759,7 @@ export class ZooInstanceAuthority {
     PlayerLeftMessage & {
       left: PlayerLeftMessage;
       seatUpdate: SeatStateUpdatedMessage | null;
+      eventsUpdate?: ZooEventsSnapshotMessage | null;
       disconnectedPlayerId: string;
     }
   > {
@@ -2134,6 +3767,7 @@ export class ZooInstanceAuthority {
       PlayerLeftMessage & {
         left: PlayerLeftMessage;
         seatUpdate: SeatStateUpdatedMessage | null;
+        eventsUpdate?: ZooEventsSnapshotMessage | null;
         disconnectedPlayerId: string;
       }
     > = [];
@@ -2144,6 +3778,20 @@ export class ZooInstanceAuthority {
       for (const session of Array.from(room.activeSessions.values())) {
         if (now - session.lastHeartbeatAt > this.heartbeatTimeoutMs) {
           const seatUpdate = this.releasePlayerSeat(room, session, now);
+          const eventEngine = this.getOrCreateEventEngine(room.roomId, now);
+          const evRemoval = eventEngine.removeParticipantSession(
+            session.sessionId,
+            session.playerId
+          );
+          const eventsUpdate: ZooEventsSnapshotMessage | null = evRemoval.changed
+            ? {
+                type: 'zoo_events_snapshot',
+                roomId: room.roomId,
+                seasonalTheme: eventEngine.getSeasonalTheme(),
+                events: eventEngine.getEventsSnapshot(),
+                serverTimestamp: now
+              }
+            : null;
           this.chatRateLimiter.clearSession(session.sessionId);
           room.activeSessions.delete(session.sessionId);
           this.sessionToRoom.delete(session.sessionId);
@@ -2166,12 +3814,14 @@ export class ZooInstanceAuthority {
             ...leftMsg,
             left: leftMsg,
             seatUpdate,
+            eventsUpdate,
             disconnectedPlayerId: session.playerId
           });
         }
       }
     }
 
+    this.pruneEmptyOverflowRooms(now);
     return removals;
   }
 
@@ -2193,6 +3843,9 @@ export class ZooInstanceAuthority {
     for (const session of room.activeSessions.values()) {
       if (session.activeEmote && session.activeEmote.expiresAt <= now) {
         session.activeEmote = null;
+      }
+      if (session.activeConsumption && session.activeConsumption.expiresAt <= now) {
+        session.activeConsumption = null;
       }
       players.push(serializePlayerRecord(session));
     }

@@ -160,7 +160,7 @@ export function attachMultiplayerWebSocketServer(
 
       switch (msg.type) {
         case 'join_instance': {
-          const { welcome, joinedBroadcast } = authority.joinOrResumePlayer({
+          const { welcome, joinedBroadcast, purgedDuplicates } = authority.joinOrResumePlayer({
             requestedRoomId: msg.roomId ?? binding.roomId,
             ...(msg.resumeToken !== undefined ? { resumeToken: msg.resumeToken } : {}),
             ...(msg.playerId !== undefined ? { playerId: msg.playerId } : {}),
@@ -169,8 +169,19 @@ export function attachMultiplayerWebSocketServer(
             ...(msg.friendPlayerIds !== undefined ? { friendPlayerIds: msg.friendPlayerIds } : {}),
             ...(msg.blockedPlayerIds !== undefined
               ? { blockedPlayerIds: msg.blockedPlayerIds }
-              : {})
+              : {}),
+            ...(msg.preferFriendPlacement !== undefined
+              ? { preferFriendPlacement: msg.preferFriendPlacement }
+              : {}),
+            ...(msg.allowFriendJoin !== undefined ? { allowFriendJoin: msg.allowFriendJoin } : {}),
+            ...(msg.diningWallet !== undefined ? { diningWallet: msg.diningWallet } : {}),
+            ...(msg.passportState !== undefined ? { passportState: msg.passportState } : {})
           });
+          if (purgedDuplicates) {
+            for (const dup of purgedDuplicates) {
+              broadcastToRoom(dup.roomId, dup, dup.sessionId);
+            }
+          }
           binding.sessionId = welcome.sessionId;
           binding.playerId = welcome.playerId ?? null;
           binding.roomId = welcome.roomId;
@@ -391,6 +402,49 @@ export function attachMultiplayerWebSocketServer(
           break;
         }
 
+        case 'set_social_privacy': {
+          if (!binding.sessionId) return;
+          const privRes = authority.setSocialPrivacy(binding.sessionId, msg);
+          if (privRes.accepted) {
+            deliverSocialPresenceToPlayers(privRes.affectedPlayerIds);
+          }
+          break;
+        }
+
+        case 'configure_instance': {
+          if (!binding.sessionId) return;
+          const cfgRes = authority.configureInstance(binding.sessionId, msg);
+          if (!cfgRes.accepted) {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: cfgRes.errorCode ?? 'INVALID_PAYLOAD',
+              message: cfgRes.errorMessage ?? 'Invalid instance configuration.'
+            });
+            return;
+          }
+          if (cfgRes.migratedSessions) {
+            for (const mig of cfgRes.migratedSessions) {
+              for (const b of bindings) {
+                if (b.sessionId === mig.sessionId) {
+                  b.roomId = mig.newRoomId;
+                  sendJson(b.ws, mig.welcome);
+                }
+              }
+              broadcastToRoom(mig.oldRoomId, mig.leftOldRoomBroadcast, mig.sessionId);
+              broadcastToRoom(mig.newRoomId, mig.joinedNewRoomBroadcast, mig.sessionId);
+            }
+          }
+          if (cfgRes.directoryUpdate) {
+            for (const b of bindings) {
+              if (b.sessionId && b.ws.readyState === WebSocket.OPEN) {
+                sendJson(b.ws, cfgRes.directoryUpdate);
+              }
+            }
+          }
+          broadcastSocialPresenceToAll();
+          break;
+        }
+
         case 'submit_player_report': {
           if (!binding.sessionId) return;
           const repRes = authority.submitPlayerReport(binding.sessionId, msg);
@@ -401,6 +455,136 @@ export function attachMultiplayerWebSocketServer(
               type: 'error_notice',
               code: repRes.errorCode ?? 'INVALID_PAYLOAD',
               message: repRes.errorMessage ?? 'Could not submit player report.'
+            });
+          }
+          break;
+        }
+
+        case 'trigger_animal_feeding': {
+          if (!binding.sessionId) return;
+          const feedRes = authority.triggerAnimalFeeding(binding.sessionId, msg);
+          if (feedRes.accepted && feedRes.broadcast) {
+            broadcastToRoom(feedRes.broadcast.roomId, feedRes.broadcast);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: feedRes.errorCode ?? 'ANIMAL_FEEDING_COOLDOWN',
+              message: feedRes.errorMessage ?? 'Habitat feeding is currently on cooldown.'
+            });
+          }
+          break;
+        }
+
+        case 'purchase_food_item': {
+          if (!binding.sessionId) return;
+          const purchaseRes = authority.purchaseFoodItem(binding.sessionId, msg);
+          sendJson(ws, purchaseRes);
+          break;
+        }
+
+        case 'consume_food_item': {
+          if (!binding.sessionId) return;
+          const consumeRes = authority.consumeFoodItem(binding.sessionId, msg);
+          sendJson(ws, consumeRes.result);
+          if (consumeRes.broadcast) {
+            broadcastToRoom(consumeRes.broadcast.roomId, consumeRes.broadcast);
+          }
+          break;
+        }
+
+        case 'stop_consuming_food': {
+          if (!binding.sessionId) return;
+          const stopRes = authority.stopConsumingFood(binding.sessionId);
+          if (stopRes.broadcast) {
+            broadcastToRoom(stopRes.broadcast.roomId, stopRes.broadcast);
+          }
+          break;
+        }
+
+        case 'record_passport_progress': {
+          if (!binding.sessionId) return;
+          authority.recordPassportProgress(binding.sessionId, msg);
+          break;
+        }
+
+        case 'claim_achievement_reward': {
+          if (!binding.sessionId) return;
+          const claimRes = authority.claimAchievementReward(binding.sessionId, msg);
+          sendJson(ws, claimRes);
+          break;
+        }
+
+        case 'join_zoo_event': {
+          if (!binding.sessionId) return;
+          const evRes = authority.joinZooEvent(binding.sessionId, msg);
+          if (evRes.accepted && evRes.broadcast) {
+            broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code:
+                evRes.errorCode === 'EVENT_FULL'
+                  ? 'EVENT_FULL'
+                  : 'EVENT_NOT_ACTIVE',
+              message: evRes.errorMessage ?? 'Unable to join event.'
+            });
+          }
+          break;
+        }
+
+        case 'leave_zoo_event': {
+          if (!binding.sessionId) return;
+          const evRes = authority.leaveZooEvent(binding.sessionId, msg);
+          if (evRes.accepted && evRes.broadcast) {
+            broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'NOT_PARTICIPATING',
+              message: evRes.errorMessage ?? 'Not participating in event.'
+            });
+          }
+          break;
+        }
+
+        case 'perform_event_action': {
+          if (!binding.sessionId) return;
+          const evRes = authority.performEventAction(binding.sessionId, msg);
+          if (evRes.accepted && evRes.broadcast) {
+            broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code:
+                evRes.errorCode === 'NOT_PARTICIPATING'
+                  ? 'NOT_PARTICIPATING'
+                  : 'EVENT_NOT_ACTIVE',
+              message: evRes.errorMessage ?? 'Unable to perform event action.'
+            });
+          }
+          break;
+        }
+
+        case 'claim_event_reward': {
+          if (!binding.sessionId) return;
+          const evRes = authority.claimEventReward(binding.sessionId, msg);
+          sendJson(ws, evRes.result);
+          if (evRes.broadcast) {
+            broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+          }
+          break;
+        }
+
+        case 'configure_zoo_events': {
+          if (!binding.sessionId) return;
+          const evRes = authority.configureZooEvents(binding.sessionId, msg);
+          if (evRes.accepted && evRes.broadcast) {
+            broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+          } else {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_EVENT_CONFIG',
+              message: evRes.errorMessage ?? 'Invalid event schedule configuration.'
             });
           }
           break;
@@ -422,9 +606,12 @@ export function attachMultiplayerWebSocketServer(
           if (!binding.sessionId) return;
           const sid = binding.sessionId;
           binding.sessionId = null;
-          const { left, seatUpdate } = authority.disconnectPlayer(sid, true);
+          const { left, seatUpdate, eventsUpdate } = authority.disconnectPlayer(sid, true);
           if (seatUpdate) {
             broadcastToRoom(seatUpdate.roomId, seatUpdate);
+          }
+          if (eventsUpdate) {
+            broadcastToRoom(eventsUpdate.roomId, eventsUpdate);
           }
           if (left) {
             broadcastToRoom(left.roomId, left, sid);
@@ -440,9 +627,12 @@ export function attachMultiplayerWebSocketServer(
       if (binding.sessionId) {
         const sid = binding.sessionId;
         binding.sessionId = null;
-        const { left, seatUpdate } = authority.disconnectPlayer(sid, false);
+        const { left, seatUpdate, eventsUpdate } = authority.disconnectPlayer(sid, false);
         if (seatUpdate) {
           broadcastToRoom(seatUpdate.roomId, seatUpdate);
+        }
+        if (eventsUpdate) {
+          broadcastToRoom(eventsUpdate.roomId, eventsUpdate);
         }
         if (left) {
           broadcastToRoom(left.roomId, left, sid);
@@ -463,6 +653,9 @@ export function attachMultiplayerWebSocketServer(
     for (const item of pruned) {
       if (item.seatUpdate) {
         broadcastToRoom(item.seatUpdate.roomId, item.seatUpdate);
+      }
+      if (item.eventsUpdate) {
+        broadcastToRoom(item.eventsUpdate.roomId, item.eventsUpdate);
       }
       broadcastToRoom(item.left.roomId, item.left, item.left.sessionId);
     }

@@ -3,7 +3,8 @@ import type {
   LocomotionState,
   PlayerIdentityProfile,
   RemoteVisitorSummary,
-  ReportReason
+  ReportReason,
+  ZooInstanceHealthStatus
 } from '../types';
 import { validateChatMessage } from '../social/chatModeration';
 import { getEmoteDescriptor, isValidEmoteId } from '../social/emoteCatalog';
@@ -27,9 +28,22 @@ import {
 import { ZooInstanceAuthority } from './zooInstanceAuthority';
 import {
   ANIMAL_SPECIES_CATALOG,
+  ANIMAL_SPECIES_IDS,
+  type AnimalSpeciesId,
   type HabitatId,
   type TriggerFeedingResult
 } from '../animals';
+import type { FoodItemId } from '../dining';
+import {
+  PASSPORT_ZONE_IDS,
+  type AchievementId,
+  type PassportZoneId
+} from '../passport';
+import {
+  sanitizeEventAdministrationConfig,
+  type ZooEventId,
+  type ZooEventScheduleConfig
+} from '../events';
 
 export const RESUME_TOKEN_STORAGE_KEY = 'online-zoo:mp-resume:v1';
 
@@ -45,6 +59,7 @@ export interface MultiplayerTransportAdapter {
 export interface MultiplayerClientOptions {
   url?: string;
   roomId?: string;
+  preferFriendPlacement?: boolean;
   maxReconnectAttempts?: number;
   reconnectBackoffMs?: number[];
   heartbeatIntervalMs?: number;
@@ -137,9 +152,15 @@ export class InMemoryMultiplayerHub {
           const entry = this.connections.get(connId);
           this.connections.delete(connId);
           if (entry?.sessionId) {
-            const { left, seatUpdate } = this.authority.disconnectPlayer(entry.sessionId, false);
+            const { left, seatUpdate, eventsUpdate } = this.authority.disconnectPlayer(
+              entry.sessionId,
+              false
+            );
             if (seatUpdate) {
               this.broadcastToRoom(seatUpdate.roomId, seatUpdate);
+            }
+            if (eventsUpdate) {
+              this.broadcastToRoom(eventsUpdate.roomId, eventsUpdate);
             }
             if (left) {
               this.broadcastToRoom(left.roomId, left, entry.sessionId);
@@ -198,15 +219,26 @@ export class InMemoryMultiplayerHub {
 
     switch (msg.type) {
       case 'join_instance': {
-        const { welcome, joinedBroadcast } = this.authority.joinOrResumePlayer({
+        const { welcome, joinedBroadcast, purgedDuplicates } = this.authority.joinOrResumePlayer({
           requestedRoomId: msg.roomId ?? DEFAULT_ROOM_ID,
           ...(msg.resumeToken !== undefined ? { resumeToken: msg.resumeToken } : {}),
           ...(msg.playerId !== undefined ? { playerId: msg.playerId } : {}),
           ...(msg.displayName !== undefined ? { displayName: msg.displayName } : {}),
           ...(msg.avatar !== undefined ? { avatar: msg.avatar } : {}),
           ...(msg.friendPlayerIds !== undefined ? { friendPlayerIds: msg.friendPlayerIds } : {}),
-          ...(msg.blockedPlayerIds !== undefined ? { blockedPlayerIds: msg.blockedPlayerIds } : {})
+          ...(msg.blockedPlayerIds !== undefined ? { blockedPlayerIds: msg.blockedPlayerIds } : {}),
+          ...(msg.preferFriendPlacement !== undefined
+            ? { preferFriendPlacement: msg.preferFriendPlacement }
+            : {}),
+          ...(msg.allowFriendJoin !== undefined ? { allowFriendJoin: msg.allowFriendJoin } : {}),
+          ...(msg.diningWallet !== undefined ? { diningWallet: msg.diningWallet } : {}),
+          ...(msg.passportState !== undefined ? { passportState: msg.passportState } : {})
         });
+        if (purgedDuplicates) {
+          for (const dup of purgedDuplicates) {
+            this.broadcastToRoom(dup.roomId, dup, dup.sessionId);
+          }
+        }
         conn.sessionId = welcome.sessionId;
         conn.playerId = welcome.playerId ?? null;
         conn.roomId = welcome.roomId;
@@ -430,6 +462,49 @@ export class InMemoryMultiplayerHub {
         break;
       }
 
+      case 'set_social_privacy': {
+        if (!conn.sessionId) return;
+        const privRes = this.authority.setSocialPrivacy(conn.sessionId, msg);
+        if (privRes.accepted) {
+          this.deliverSocialPresenceToPlayers(privRes.affectedPlayerIds);
+        }
+        break;
+      }
+
+      case 'configure_instance': {
+        if (!conn.sessionId) return;
+        const cfgRes = this.authority.configureInstance(conn.sessionId, msg);
+        if (!cfgRes.accepted) {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code: cfgRes.errorCode ?? 'INVALID_PAYLOAD',
+            message: cfgRes.errorMessage ?? 'Invalid instance configuration.'
+          });
+          return;
+        }
+        if (cfgRes.migratedSessions) {
+          for (const mig of cfgRes.migratedSessions) {
+            for (const targetConn of this.connections.values()) {
+              if (targetConn.sessionId === mig.sessionId) {
+                targetConn.roomId = mig.newRoomId;
+                targetConn.deliverToClient(mig.welcome);
+              }
+            }
+            this.broadcastToRoom(mig.oldRoomId, mig.leftOldRoomBroadcast, mig.sessionId);
+            this.broadcastToRoom(mig.newRoomId, mig.joinedNewRoomBroadcast, mig.sessionId);
+          }
+        }
+        if (cfgRes.directoryUpdate) {
+          for (const targetConn of this.connections.values()) {
+            if (targetConn.sessionId) {
+              targetConn.deliverToClient(cfgRes.directoryUpdate);
+            }
+          }
+        }
+        this.broadcastSocialPresenceToAll();
+        break;
+      }
+
       case 'submit_player_report': {
         if (!conn.sessionId) return;
         const repRes = this.authority.submitPlayerReport(conn.sessionId, msg);
@@ -460,6 +535,121 @@ export class InMemoryMultiplayerHub {
         break;
       }
 
+      case 'purchase_food_item': {
+        if (!conn.sessionId) return;
+        const purchaseRes = this.authority.purchaseFoodItem(conn.sessionId, msg);
+        conn.deliverToClient(purchaseRes);
+        break;
+      }
+
+      case 'consume_food_item': {
+        if (!conn.sessionId) return;
+        const consumeRes = this.authority.consumeFoodItem(conn.sessionId, msg);
+        conn.deliverToClient(consumeRes.result);
+        if (consumeRes.broadcast) {
+          this.broadcastToRoom(consumeRes.broadcast.roomId, consumeRes.broadcast);
+        }
+        break;
+      }
+
+      case 'stop_consuming_food': {
+        if (!conn.sessionId) return;
+        const stopRes = this.authority.stopConsumingFood(conn.sessionId);
+        if (stopRes.broadcast) {
+          this.broadcastToRoom(stopRes.broadcast.roomId, stopRes.broadcast);
+        }
+        break;
+      }
+
+      case 'record_passport_progress': {
+        if (!conn.sessionId) return;
+        this.authority.recordPassportProgress(conn.sessionId, msg);
+        break;
+      }
+
+      case 'claim_achievement_reward': {
+        if (!conn.sessionId) return;
+        const claimRes = this.authority.claimAchievementReward(conn.sessionId, msg);
+        conn.deliverToClient(claimRes);
+        break;
+      }
+
+      case 'join_zoo_event': {
+        if (!conn.sessionId) return;
+        const evRes = this.authority.joinZooEvent(conn.sessionId, msg);
+        if (evRes.accepted && evRes.broadcast) {
+          this.broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+        } else {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code:
+              evRes.errorCode === 'EVENT_FULL'
+                ? 'EVENT_FULL'
+                : 'EVENT_NOT_ACTIVE',
+            message: evRes.errorMessage ?? 'Unable to join event.'
+          });
+        }
+        break;
+      }
+
+      case 'leave_zoo_event': {
+        if (!conn.sessionId) return;
+        const evRes = this.authority.leaveZooEvent(conn.sessionId, msg);
+        if (evRes.accepted && evRes.broadcast) {
+          this.broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+        } else {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code: 'NOT_PARTICIPATING',
+            message: evRes.errorMessage ?? 'Not participating in event.'
+          });
+        }
+        break;
+      }
+
+      case 'perform_event_action': {
+        if (!conn.sessionId) return;
+        const evRes = this.authority.performEventAction(conn.sessionId, msg);
+        if (evRes.accepted && evRes.broadcast) {
+          this.broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+        } else {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code:
+              evRes.errorCode === 'NOT_PARTICIPATING'
+                ? 'NOT_PARTICIPATING'
+                : 'EVENT_NOT_ACTIVE',
+            message: evRes.errorMessage ?? 'Unable to perform event action.'
+          });
+        }
+        break;
+      }
+
+      case 'claim_event_reward': {
+        if (!conn.sessionId) return;
+        const evRes = this.authority.claimEventReward(conn.sessionId, msg);
+        conn.deliverToClient(evRes.result);
+        if (evRes.broadcast) {
+          this.broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+        }
+        break;
+      }
+
+      case 'configure_zoo_events': {
+        if (!conn.sessionId) return;
+        const evRes = this.authority.configureZooEvents(conn.sessionId, msg);
+        if (evRes.accepted && evRes.broadcast) {
+          this.broadcastToRoom(evRes.broadcast.roomId, evRes.broadcast);
+        } else {
+          conn.deliverToClient({
+            type: 'error_notice',
+            code: 'INVALID_EVENT_CONFIG',
+            message: evRes.errorMessage ?? 'Invalid event schedule configuration.'
+          });
+        }
+        break;
+      }
+
       case 'ping': {
         if (conn.sessionId) {
           this.authority.recordHeartbeat(conn.sessionId);
@@ -476,9 +666,12 @@ export class InMemoryMultiplayerHub {
         if (!conn.sessionId) return;
         const sid = conn.sessionId;
         conn.sessionId = null;
-        const { left, seatUpdate } = this.authority.disconnectPlayer(sid, true);
+        const { left, seatUpdate, eventsUpdate } = this.authority.disconnectPlayer(sid, true);
         if (seatUpdate) {
           this.broadcastToRoom(seatUpdate.roomId, seatUpdate);
+        }
+        if (eventsUpdate) {
+          this.broadcastToRoom(eventsUpdate.roomId, eventsUpdate);
         }
         if (left) {
           this.broadcastToRoom(left.roomId, left, sid);
@@ -494,6 +687,9 @@ export class InMemoryMultiplayerHub {
     for (const item of pruned) {
       if (item.seatUpdate) {
         this.broadcastToRoom(item.seatUpdate.roomId, item.seatUpdate);
+      }
+      if (item.eventsUpdate) {
+        this.broadcastToRoom(item.eventsUpdate.roomId, item.eventsUpdate);
       }
       this.broadcastToRoom(item.left.roomId, item.left, item.left.sessionId);
     }
@@ -595,12 +791,26 @@ function resolveRoomIdFromUrl(fallbackRoomId = DEFAULT_ROOM_ID): string {
   return fallbackRoomId;
 }
 
+function hasExplicitRoomParamInUrl(): boolean {
+  if (typeof window === 'undefined' || !window.location) {
+    return false;
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('room');
+    return Boolean(roomParam && /^[a-zA-Z0-9_-]{1,48}$/.test(roomParam));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Client-side multiplayer session, social interaction, 20 Hz movement sender, local reconciliation handler,
  * and automatic/manual reconnection controller (`FR-001`–`FR-024`).
  */
 export class MultiplayerClient {
   private roomId: string;
+  private readonly preferFriendPlacement: boolean;
   private readonly url: string;
   private readonly maxReconnectAttempts: number;
   private readonly reconnectBackoffMs: number[];
@@ -617,6 +827,7 @@ export class MultiplayerClient {
   private resumeToken: string | null = null;
   private localSessionId: string | null = null;
   private moveSequence = 0;
+  private purchaseReqCounter = 0;
   private virtualClockMs = 0;
   private lastSentMoveAt = 0;
   private lastSentHeartbeatAt = 0;
@@ -633,6 +844,8 @@ export class MultiplayerClient {
 
   constructor(options: MultiplayerClientOptions = {}) {
     this.roomId = options.roomId ?? resolveRoomIdFromUrl(DEFAULT_ROOM_ID);
+    const hasExplicitOverride = Boolean(options.roomId) || hasExplicitRoomParamInUrl();
+    this.preferFriendPlacement = options.preferFriendPlacement ?? !hasExplicitOverride;
     this.url = options.url ?? resolveDefaultWebSocketUrl(this.roomId);
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
     this.reconnectBackoffMs = options.reconnectBackoffMs ?? [500, 1000, 2000, 3000, 4000];
@@ -717,7 +930,14 @@ export class MultiplayerClient {
           ...(profile.isCustomized ? { displayName: profile.displayName } : {}),
           avatar: { ...profile.avatar },
           friendPlayerIds,
-          blockedPlayerIds
+          blockedPlayerIds,
+          preferFriendPlacement: this.preferFriendPlacement,
+          allowFriendJoin: st.social.allowFriendJoin,
+          diningWallet: {
+            currencyBalance: st.dining.wallet.currencyBalance,
+            inventory: { ...st.dining.wallet.inventory }
+          },
+          passportState: st.passport.state
         });
       };
 
@@ -761,6 +981,7 @@ export class MultiplayerClient {
     mutableRuntimeState.remotePlayers.clear();
     gameStore.getState().setLocalSeatedState(null);
     gameStore.getState().setLocalActiveEmote(null);
+    gameStore.getState().setLocalActiveConsumption(null);
     gameStore.getState().updateMultiplayerState({
       status: 'disconnected',
       visitorCount: 1,
@@ -935,10 +1156,14 @@ export class MultiplayerClient {
             ...(p.avatar ? { avatar: { ...p.avatar } } : {}),
             locomotionState: p.locomotionState,
             activeEmote: p.activeEmote ?? null,
-            seatedOn: p.seatedOn ?? null
+            seatedOn: p.seatedOn ?? null,
+            activeConsumption: p.activeConsumption ?? null
           };
           if (p.activeEmote) {
             store.setRemoteActiveEmote(p.sessionId, p.playerId, p.activeEmote);
+          }
+          if (p.activeConsumption) {
+            store.setRemoteActiveConsumption(p.sessionId, p.playerId, p.activeConsumption);
           }
         }
 
@@ -946,8 +1171,31 @@ export class MultiplayerClient {
           store.setAvailableInstances(parsed.availableInstances);
         }
 
+        if (parsed.allowFriendJoin !== undefined) {
+          store.setAllowFriendJoin(parsed.allowFriendJoin);
+        }
+
+        if (parsed.placementNotice) {
+          store.setSocialNotice(parsed.placementNotice);
+        }
+
         if (parsed.animals) {
           store.setAnimalsAuthoritative(parsed.animals, parsed.habitatFeedings);
+        }
+
+        if (parsed.diningWallet) {
+          store.applyDiningWalletUpdate(
+            parsed.diningWallet.currencyBalance,
+            parsed.diningWallet.inventory
+          );
+        }
+
+        if (parsed.passportState) {
+          store.applyPassportServerUpdate(parsed.passportState);
+        }
+
+        if (parsed.zooEvents) {
+          store.applyZooEventsSnapshot(parsed.zooEvents);
         }
 
         store.updateMultiplayerState({
@@ -984,7 +1232,8 @@ export class MultiplayerClient {
           ...(p.avatar ? { avatar: { ...p.avatar } } : {}),
           locomotionState: p.locomotionState,
           activeEmote: p.activeEmote ?? null,
-          seatedOn: p.seatedOn ?? null
+          seatedOn: p.seatedOn ?? null,
+          activeConsumption: p.activeConsumption ?? null
         });
         store.updateMultiplayerState({ visitorCount: parsed.visitorCount });
         break;
@@ -1026,7 +1275,8 @@ export class MultiplayerClient {
             ...(p.avatar ? { avatar: { ...p.avatar } } : {}),
             locomotionState: p.locomotionState,
             activeEmote: p.activeEmote ?? null,
-            seatedOn: p.seatedOn ?? null
+            seatedOn: p.seatedOn ?? null,
+            activeConsumption: p.activeConsumption ?? null
           });
         }
 
@@ -1146,6 +1396,92 @@ export class MultiplayerClient {
         break;
       }
 
+      case 'food_purchase_result': {
+        store.applyDiningWalletUpdate(parsed.currencyBalance, parsed.inventory);
+        store.setPurchaseFeedback({
+          type: parsed.success ? 'success' : 'error',
+          message: parsed.message,
+          ...(parsed.errorCode !== undefined ? { code: parsed.errorCode } : {}),
+          timestamp: parsed.serverTimestamp
+        });
+        break;
+      }
+
+      case 'food_consume_result': {
+        store.applyDiningWalletUpdate(parsed.currencyBalance, parsed.inventory);
+        if (parsed.success && parsed.consumption) {
+          store.setLocalActiveConsumption(parsed.consumption);
+        }
+        store.setPurchaseFeedback({
+          type: parsed.success ? 'success' : 'error',
+          message: parsed.message,
+          ...(parsed.errorCode !== undefined ? { code: parsed.errorCode } : {}),
+          timestamp: parsed.serverTimestamp
+        });
+        break;
+      }
+
+      case 'player_consumption_updated': {
+        if (parsed.sessionId === this.localSessionId) {
+          store.setLocalActiveConsumption(parsed.consumption);
+        } else {
+          store.setRemoteActiveConsumption(
+            parsed.sessionId,
+            parsed.playerId,
+            parsed.consumption
+          );
+        }
+        break;
+      }
+
+      case 'achievement_reward_result': {
+        store.applyPassportServerUpdate(parsed.passportState);
+        store.applyDiningWalletUpdate(
+          parsed.currencyBalance,
+          store.dining.wallet.inventory
+        );
+        store.setPassportRewardFeedback({
+          type: parsed.success ? 'success' : 'error',
+          message: parsed.message,
+          ...(parsed.errorCode !== undefined ? { code: parsed.errorCode } : {}),
+          timestamp: parsed.serverTimestamp
+        });
+        break;
+      }
+
+      case 'zoo_events_snapshot': {
+        store.applyZooEventsSnapshot({
+          seasonalTheme: parsed.seasonalTheme,
+          events: parsed.events,
+          ...(parsed.notice !== undefined ? { notice: parsed.notice } : {}),
+          ...(parsed.errorCode !== undefined ? { errorCode: parsed.errorCode } : {})
+        });
+        break;
+      }
+
+      case 'event_reward_result': {
+        store.applyPassportServerUpdate(parsed.passportState);
+        store.applyDiningWalletUpdate(
+          parsed.currencyBalance,
+          store.dining.wallet.inventory
+        );
+        store.setEventFeedback({
+          type: parsed.success ? 'success' : 'error',
+          message: parsed.message,
+          ...(parsed.errorCode !== undefined ? { code: parsed.errorCode } : {}),
+          timestamp: parsed.serverTimestamp
+        });
+        break;
+      }
+
+      case 'instance_directory_update': {
+        store.setAvailableInstances(parsed.availableInstances);
+        if (parsed.notice) {
+          store.setSocialNotice(parsed.notice);
+        }
+        break;
+      }
+
       case 'error_notice': {
         if (
           parsed.code === 'CHAT_RATE_LIMITED' ||
@@ -1159,8 +1495,22 @@ export class MultiplayerClient {
         } else if (parsed.code === 'ANIMAL_FEEDING_COOLDOWN') {
           store.setFeedingNotice(parsed.message);
         } else if (
+          parsed.code === 'EVENT_FULL' ||
+          parsed.code === 'EVENT_NOT_ACTIVE' ||
+          parsed.code === 'NOT_PARTICIPATING' ||
+          parsed.code === 'INVALID_EVENT_CONFIG'
+        ) {
+          store.setEventFeedback({
+            type: 'error',
+            message: parsed.message,
+            code: parsed.code,
+            timestamp: now
+          });
+        } else if (
           parsed.code === 'SEAT_OCCUPIED' ||
           parsed.code === 'ROOM_FULL' ||
+          parsed.code === 'INSTANCE_UNAVAILABLE' ||
+          parsed.code === 'FRIEND_JOIN_DISABLED' ||
           parsed.code === 'PLAYER_BLOCKED' ||
           parsed.code === 'FRIEND_REQUEST_INVALID'
         ) {
@@ -1447,6 +1797,47 @@ export class MultiplayerClient {
     });
   }
 
+  public setSocialPrivacy(allowFriendJoin: boolean): void {
+    const store = gameStore.getState();
+    store.setAllowFriendJoin(allowFriendJoin);
+    if (store.multiplayer.status === 'connected') {
+      this.sendRaw({
+        type: 'set_social_privacy',
+        allowFriendJoin
+      });
+    }
+  }
+
+  public configureInstance(params: {
+    roomId: string;
+    maxPlayers?: number;
+    status?: ZooInstanceHealthStatus;
+  }): void {
+    const trimmed = params.roomId.trim();
+    if (!trimmed) return;
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      const nextInstances = store.social.availableInstances.map((inst) =>
+        inst.roomId === trimmed
+          ? {
+              ...inst,
+              maxPlayers: params.maxPlayers ?? inst.maxPlayers,
+              status: params.status ?? inst.status ?? 'healthy',
+              isFull: inst.visitorCount >= (params.maxPlayers ?? inst.maxPlayers)
+            }
+          : inst
+      );
+      store.setAvailableInstances(nextInstances);
+      return;
+    }
+    this.sendRaw({
+      type: 'configure_instance',
+      roomId: trimmed,
+      ...(params.maxPlayers !== undefined ? { maxPlayers: params.maxPlayers } : {}),
+      ...(params.status !== undefined ? { status: params.status } : {})
+    });
+  }
+
   public setPlayerBlock(targetPlayerId: string, blocked: boolean): void {
     gameStore.getState().setBlockPlayer(targetPlayerId, blocked);
     if (gameStore.getState().multiplayer.status === 'connected') {
@@ -1550,6 +1941,239 @@ export class MultiplayerClient {
     }
 
     return localRes;
+  }
+
+  /**
+   * Requests an authoritative food or drink purchase (`FR-004`–`FR-006`, `SC-002`).
+   * Uses `requestId` for idempotency so duplicate network packets never double-charge.
+   */
+  public purchaseFoodItem(
+    itemId: FoodItemId,
+    requestId?: string,
+    stallId?: string
+  ): string {
+    this.purchaseReqCounter += 1;
+    const reqId =
+      requestId && requestId.trim().length > 0
+        ? requestId.trim()
+        : `buy_${itemId}_${Date.now()}_${this.purchaseReqCounter}`;
+
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.purchaseFoodItemOffline(itemId);
+      return reqId;
+    }
+
+    this.sendRaw({
+      type: 'purchase_food_item',
+      itemId,
+      requestId: reqId,
+      ...(stallId !== undefined ? { stallId } : {})
+    });
+    return reqId;
+  }
+
+  /**
+   * Consumes an owned food or drink item from inventory (`FR-007`–`FR-011`, `SC-004`).
+   */
+  public consumeFoodItem(itemId: FoodItemId, now = Date.now()): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.consumeFoodItemOffline(itemId, now);
+      return;
+    }
+
+    this.sendRaw({
+      type: 'consume_food_item',
+      itemId
+    });
+  }
+
+  /**
+   * Stops active food or drink consumption animation early (`FR-011`).
+   */
+  public stopConsumingFood(): void {
+    const store = gameStore.getState();
+    store.setLocalActiveConsumption(null);
+    if (store.multiplayer.status === 'connected') {
+      this.sendRaw({
+        type: 'stop_consuming_food'
+      });
+    }
+  }
+
+  /**
+   * Synchronizes a Zoo Passport milestone (zone stamp, species discovery, social action, or activity)
+   * with the authoritative server session (`FR-001`–`FR-007`).
+   */
+  public recordPassportProgress(params: {
+    zoneId?: PassportZoneId;
+    speciesId?: AnimalSpeciesId;
+    socialAction?: boolean;
+    activityCompleted?: boolean;
+  }): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      return;
+    }
+    this.sendRaw({
+      type: 'record_passport_progress',
+      ...(params.zoneId !== undefined ? { zoneId: params.zoneId } : {}),
+      ...(params.speciesId !== undefined ? { speciesId: params.speciesId } : {}),
+      ...(params.socialAction !== undefined
+        ? { socialAction: params.socialAction }
+        : {}),
+      ...(params.activityCompleted !== undefined
+        ? { activityCompleted: params.activityCompleted }
+        : {})
+    });
+  }
+
+  /**
+   * Requests an authoritative one-time achievement reward claim (`FR-008`–`FR-010`, `SC-005`).
+   * Uses `requestId` for idempotency so duplicate network packets never grant extra coins.
+   */
+  public claimAchievementReward(
+    achievementId: AchievementId,
+    requestId?: string
+  ): string {
+    this.purchaseReqCounter += 1;
+    const reqId =
+      requestId && requestId.trim().length > 0
+        ? requestId.trim()
+        : `claim_${achievementId}_${Date.now()}_${this.purchaseReqCounter}`;
+
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.claimAchievementRewardOffline(achievementId);
+      return reqId;
+    }
+
+    for (const zid of PASSPORT_ZONE_IDS) {
+      if (store.passport.state.stamps[zid]?.obtained) {
+        this.recordPassportProgress({ zoneId: zid });
+      }
+    }
+    for (const sid of ANIMAL_SPECIES_IDS) {
+      if (store.animalSim.encyclopedia.entries[sid]?.discovered) {
+        this.recordPassportProgress({ speciesId: sid });
+      }
+    }
+    if (store.passport.state.socialInteractionsCount > 0) {
+      this.recordPassportProgress({ socialAction: true });
+    }
+    if (store.passport.state.activitiesCompletedCount > 0) {
+      this.recordPassportProgress({ activityCompleted: true });
+    }
+
+    this.sendRaw({
+      type: 'claim_achievement_reward',
+      achievementId,
+      requestId: reqId
+    });
+    return reqId;
+  }
+
+  /**
+   * Joins an active zoo event (`FR-003`–`FR-006`, `SC-002`).
+   */
+  public joinZooEvent(eventId: ZooEventId): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.joinZooEventOffline(eventId);
+      return;
+    }
+    this.sendRaw({
+      type: 'join_zoo_event',
+      eventId
+    });
+  }
+
+  /**
+   * Leaves an active zoo event (`FR-005`, `FR-006`, `SC-002`).
+   */
+  public leaveZooEvent(eventId: ZooEventId): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.leaveZooEventOffline(eventId);
+      return;
+    }
+    this.sendRaw({
+      type: 'leave_zoo_event',
+      eventId
+    });
+  }
+
+  /**
+   * Contributes to an active zoo event's shared group progress (`FR-006`, `SC-002`).
+   */
+  public performEventAction(eventId: ZooEventId): void {
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.performEventActionOffline(eventId);
+      return;
+    }
+    this.sendRaw({
+      type: 'perform_event_action',
+      eventId
+    });
+  }
+
+  /**
+   * Claims a one-time reward (Zoo Coins + Passport Zone Stamp) for participating in a zoo event (`FR-007`–`FR-008`, `SC-003`).
+   */
+  public claimEventReward(eventId: ZooEventId, requestId?: string): string {
+    this.purchaseReqCounter += 1;
+    const reqId =
+      requestId && requestId.trim().length > 0
+        ? requestId.trim()
+        : `evclaim_${eventId}_${Date.now()}_${this.purchaseReqCounter}`;
+
+    const store = gameStore.getState();
+    if (store.multiplayer.status !== 'connected') {
+      store.claimEventRewardOffline(eventId);
+      return reqId;
+    }
+
+    this.sendRaw({
+      type: 'claim_event_reward',
+      eventId,
+      requestId: reqId
+    });
+    return reqId;
+  }
+
+  /**
+   * Configures seasonal themes or runtime event schedules (`FR-009`–`FR-010`, `SC-004`).
+   */
+  public configureZooEvents(config: ZooEventScheduleConfig): void {
+    const store = gameStore.getState();
+    const sanitized = sanitizeEventAdministrationConfig(config);
+    if (!sanitized.valid) {
+      store.setEventFeedback({
+        type: 'error',
+        message:
+          sanitized.rejectedReasons[0] ??
+          'Invalid zoo event schedule configuration.',
+        code: 'INVALID_EVENT_CONFIG'
+      });
+      return;
+    }
+
+    if (store.multiplayer.status !== 'connected') {
+      store.configureZooEventsOffline(config);
+      return;
+    }
+
+    this.sendRaw({
+      type: 'configure_zoo_events',
+      ...(sanitized.seasonalTheme !== undefined
+        ? { seasonalTheme: sanitized.seasonalTheme }
+        : {}),
+      ...(sanitized.eventPatches.length > 0
+        ? { eventPatches: sanitized.eventPatches }
+        : {})
+    });
   }
 
   public stepFrame(dt: number, now?: number): void {

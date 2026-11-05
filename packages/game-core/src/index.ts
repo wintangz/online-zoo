@@ -10,6 +10,9 @@ export * from './interaction/interactionSystem';
 export * from './identity';
 export * from './social';
 export * from './animals';
+export * from './dining';
+export * from './passport';
+export * from './events';
 export * from './multiplayer';
 
 

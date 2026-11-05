@@ -18,7 +18,8 @@ export function createEmptyPersistedSocialState(): PersistedSocialProfile {
     schemaVersion: 1,
     friends: {},
     mutedPlayerIds: [],
-    blockedPlayerIds: []
+    blockedPlayerIds: [],
+    allowFriendJoin: true
   };
 }
 
@@ -77,21 +78,33 @@ export function sanitizePersistedSocialState(raw: unknown): PersistedSocialProfi
     delete friends[blockedId];
   }
 
+  const allowFriendJoin =
+    typeof obj.allowFriendJoin === 'boolean' ? obj.allowFriendJoin : true;
+
   return {
     schemaVersion: 1,
     friends,
     mutedPlayerIds,
-    blockedPlayerIds
+    blockedPlayerIds,
+    allowFriendJoin
   };
 }
 
+const inMemorySocialStorage = new Map<string, string>();
+
 export function loadPersistedSocialState(playerId?: string): PersistedSocialProfile {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return createEmptyPersistedSocialState();
-  }
   try {
-    const scopedRaw = window.localStorage.getItem(getStorageKeyForPlayer(playerId));
-    const fallbackRaw = window.localStorage.getItem(SOCIAL_STATE_STORAGE_KEY);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const scopedRaw = window.localStorage.getItem(getStorageKeyForPlayer(playerId));
+      const fallbackRaw = window.localStorage.getItem(SOCIAL_STATE_STORAGE_KEY);
+      const raw = scopedRaw ?? fallbackRaw;
+      if (!raw) {
+        return createEmptyPersistedSocialState();
+      }
+      return sanitizePersistedSocialState(JSON.parse(raw));
+    }
+    const scopedRaw = inMemorySocialStorage.get(getStorageKeyForPlayer(playerId));
+    const fallbackRaw = inMemorySocialStorage.get(SOCIAL_STATE_STORAGE_KEY);
     const raw = scopedRaw ?? fallbackRaw;
     if (!raw) {
       return createEmptyPersistedSocialState();
@@ -107,9 +120,11 @@ export function savePersistedSocialState(
   playerId?: string
 ): PersistedSocialProfile {
   const sanitized = sanitizePersistedSocialState(state);
+  const payload = JSON.stringify(sanitized);
+  inMemorySocialStorage.set(getStorageKeyForPlayer(playerId), payload);
+  inMemorySocialStorage.set(SOCIAL_STATE_STORAGE_KEY, payload);
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      const payload = JSON.stringify(sanitized);
       window.localStorage.setItem(getStorageKeyForPlayer(playerId), payload);
       window.localStorage.setItem(SOCIAL_STATE_STORAGE_KEY, payload);
     } catch {

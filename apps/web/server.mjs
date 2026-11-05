@@ -110,6 +110,267 @@ const EMOTE_DESCRIPTORS = {
   sit: { id: 'sit', label: 'Sit / Relax', icon: '🧘', durationMs: 6000 }
 };
 
+/** @type {Record<string, { id: string; name: string; category: 'food' | 'drink'; gerundLabel: 'Eating' | 'Drinking'; price: number; icon: string; durationMs: number }>} */
+const SERVER_FOOD_CATALOG = {
+  water: { id: 'water', name: 'Spring Water', category: 'drink', gerundLabel: 'Drinking', price: 5, icon: '💧', durationMs: 5000 },
+  popcorn: { id: 'popcorn', name: 'Caramel Zoo Popcorn', category: 'food', gerundLabel: 'Eating', price: 10, icon: '🍿', durationMs: 5000 },
+  'ice-cream': { id: 'ice-cream', name: 'Panda Swirl Ice Cream', category: 'food', gerundLabel: 'Eating', price: 12, icon: '🍦', durationMs: 5000 },
+  'bubble-tea': { id: 'bubble-tea', name: 'Brown Sugar Bubble Tea', category: 'drink', gerundLabel: 'Drinking', price: 15, icon: '🧋', durationMs: 5000 },
+  burger: { id: 'burger', name: 'Bamboo Grove Burger', category: 'food', gerundLabel: 'Eating', price: 20, icon: '🍔', durationMs: 5000 }
+};
+const VALID_FOOD_IDS = ['water', 'bubble-tea', 'ice-cream', 'burger', 'popcorn'];
+const INITIAL_ZOO_COINS = 100;
+const MAX_ZOO_COINS = 9999;
+const MAX_FOOD_QUANTITY = 99;
+
+function createEmptyFoodInventoryServer() {
+  return {
+    water: 0,
+    'bubble-tea': 0,
+    'ice-cream': 0,
+    burger: 0,
+    popcorn: 0
+  };
+}
+
+/** @param {any} raw */
+function sanitizeDiningWalletServer(raw) {
+  const inv = /** @type {Record<string, number>} */ (createEmptyFoodInventoryServer());
+  if (!raw || typeof raw !== 'object') {
+    return { currencyBalance: INITIAL_ZOO_COINS, inventory: inv };
+  }
+  const balance =
+    typeof raw.currencyBalance === 'number' && Number.isFinite(raw.currencyBalance)
+      ? Math.max(0, Math.min(MAX_ZOO_COINS, Math.floor(raw.currencyBalance)))
+      : INITIAL_ZOO_COINS;
+  if (raw.inventory && typeof raw.inventory === 'object') {
+    for (const id of VALID_FOOD_IDS) {
+      const q = raw.inventory[id];
+      if (typeof q === 'number' && Number.isFinite(q) && q >= 0) {
+        inv[id] = Math.min(MAX_FOOD_QUANTITY, Math.floor(q));
+      }
+    }
+  }
+  return { currencyBalance: balance, inventory: inv };
+}
+
+const VALID_PASSPORT_ZONE_IDS = [
+  'zone-welcome-plaza',
+  'zone-panda-sanctuary',
+  'zone-penguin-cove',
+  'zone-lotus-stream',
+  'zone-wind-chime-lookout'
+];
+
+/** @type {Array<{ zoneId: string; center: [number, number, number]; radiusMeters: number }>} */
+const SERVER_PASSPORT_ZONES = [
+  { zoneId: 'zone-welcome-plaza', center: [-5.2, 0, 12.6], radiusMeters: 4.2 },
+  { zoneId: 'zone-panda-sanctuary', center: [8.4, 0, 9.2], radiusMeters: 6.0 },
+  { zoneId: 'zone-penguin-cove', center: [-8.6, 0, 7.0], radiusMeters: 6.0 },
+  { zoneId: 'zone-lotus-stream', center: [-2.0, 0, -2.5], radiusMeters: 6.0 },
+  { zoneId: 'zone-wind-chime-lookout', center: [2.5, 0, -9.5], radiusMeters: 6.5 }
+];
+
+const VALID_ACHIEVEMENT_IDS = [
+  'ach-first-stamp',
+  'ach-world-explorer',
+  'ach-first-animal',
+  'ach-zoologist',
+  'ach-social-greeting',
+  'ach-keeper-helper'
+];
+
+/** @type {Record<string, { achievementId: string; title: string; targetCount: number; rewardCoins: number; rewardBadge: string }>} */
+const SERVER_ACHIEVEMENTS_BY_ID = {
+  'ach-first-stamp': {
+    achievementId: 'ach-first-stamp',
+    title: 'First Footsteps',
+    targetCount: 1,
+    rewardCoins: 15,
+    rewardBadge: 'Trailblazer'
+  },
+  'ach-world-explorer': {
+    achievementId: 'ach-world-explorer',
+    title: 'Master Cartographer',
+    targetCount: 5,
+    rewardCoins: 50,
+    rewardBadge: 'Park Ranger'
+  },
+  'ach-first-animal': {
+    achievementId: 'ach-first-animal',
+    title: 'Curious Naturalist',
+    targetCount: 1,
+    rewardCoins: 15,
+    rewardBadge: 'Field Spotter'
+  },
+  'ach-zoologist': {
+    achievementId: 'ach-zoologist',
+    title: 'Sanctuary Zoologist',
+    targetCount: 3,
+    rewardCoins: 40,
+    rewardBadge: 'Master Zoologist'
+  },
+  'ach-social-greeting': {
+    achievementId: 'ach-social-greeting',
+    title: 'Friendly Visitor',
+    targetCount: 1,
+    rewardCoins: 15,
+    rewardBadge: 'Warm Welcomer'
+  },
+  'ach-keeper-helper': {
+    achievementId: 'ach-keeper-helper',
+    title: 'Sanctuary Enthusiast',
+    targetCount: 1,
+    rewardCoins: 20,
+    rewardBadge: 'Sanctuary Gourmand'
+  }
+};
+
+/** @param {string} [nowIso] */
+function createDefaultPassportStateServer(nowIso = new Date().toISOString()) {
+  /** @type {Record<string, { zoneId: string; obtained: boolean; stampedAt: string | null }>} */
+  const stamps = {};
+  for (const zid of VALID_PASSPORT_ZONE_IDS) {
+    stamps[zid] = { zoneId: zid, obtained: false, stampedAt: null };
+  }
+  /** @type {Record<string, { achievementId: string; progressCount: number; targetCount: number; unlocked: boolean; unlockedAt: string | null; claimed: boolean; claimedAt: string | null }>} */
+  const achievements = {};
+  for (const aid of VALID_ACHIEVEMENT_IDS) {
+    const desc = SERVER_ACHIEVEMENTS_BY_ID[aid];
+    achievements[aid] = {
+      achievementId: aid,
+      progressCount: 0,
+      targetCount: desc ? desc.targetCount : 1,
+      unlocked: false,
+      unlockedAt: null,
+      claimed: false,
+      claimedAt: null
+    };
+  }
+  return {
+    schemaVersion: 1,
+    stamps,
+    achievements,
+    socialInteractionsCount: 0,
+    activitiesCompletedCount: 0,
+    earnedBadges: /** @type {string[]} */ ([]),
+    activeBadge: /** @type {string | null} */ (null),
+    updatedAt: nowIso
+  };
+}
+
+/**
+ * @param {any} raw
+ * @param {string} [nowIso]
+ */
+function sanitizePassportStateServer(raw, nowIso = new Date().toISOString()) {
+  const base = createDefaultPassportStateServer(nowIso);
+  if (!raw || typeof raw !== 'object') return base;
+  if (raw.stamps && typeof raw.stamps === 'object') {
+    for (const zid of VALID_PASSPORT_ZONE_IDS) {
+      const s = raw.stamps[zid];
+      if (s && typeof s === 'object' && s.obtained === true) {
+        base.stamps[zid] = {
+          zoneId: zid,
+          obtained: true,
+          stampedAt: typeof s.stampedAt === 'string' ? s.stampedAt : nowIso
+        };
+      }
+    }
+  }
+  if (raw.achievements && typeof raw.achievements === 'object') {
+    for (const aid of VALID_ACHIEVEMENT_IDS) {
+      const a = raw.achievements[aid];
+      const desc = SERVER_ACHIEVEMENTS_BY_ID[aid];
+      const target = desc ? desc.targetCount : 1;
+      if (a && typeof a === 'object') {
+        const rawProgress =
+          typeof a.progressCount === 'number' && Number.isFinite(a.progressCount)
+            ? Math.max(0, Math.min(target, Math.floor(a.progressCount)))
+            : 0;
+        const unlocked = Boolean(a.unlocked) || rawProgress >= target;
+        const claimed = unlocked && Boolean(a.claimed);
+        base.achievements[aid] = {
+          achievementId: aid,
+          progressCount: unlocked ? target : rawProgress,
+          targetCount: target,
+          unlocked,
+          unlockedAt: unlocked
+            ? typeof a.unlockedAt === 'string'
+              ? a.unlockedAt
+              : nowIso
+            : null,
+          claimed,
+          claimedAt: claimed
+            ? typeof a.claimedAt === 'string'
+              ? a.claimedAt
+              : nowIso
+            : null
+        };
+      }
+    }
+  }
+  if (typeof raw.socialInteractionsCount === 'number' && Number.isFinite(raw.socialInteractionsCount)) {
+    base.socialInteractionsCount = Math.max(0, Math.floor(raw.socialInteractionsCount));
+  }
+  if (typeof raw.activitiesCompletedCount === 'number' && Number.isFinite(raw.activitiesCompletedCount)) {
+    base.activitiesCompletedCount = Math.max(0, Math.floor(raw.activitiesCompletedCount));
+  }
+  if (Array.isArray(raw.earnedBadges)) {
+    for (const b of raw.earnedBadges) {
+      if (typeof b === 'string' && b.trim() && !base.earnedBadges.includes(b.trim())) {
+        base.earnedBadges.push(b.trim());
+      }
+    }
+  }
+  for (const aid of VALID_ACHIEVEMENT_IDS) {
+    const rec = base.achievements[aid];
+    const desc = SERVER_ACHIEVEMENTS_BY_ID[aid];
+    if (rec && rec.claimed && desc && !base.earnedBadges.includes(desc.rewardBadge)) {
+      base.earnedBadges.push(desc.rewardBadge);
+    }
+  }
+  if (typeof raw.activeBadge === 'string' && base.earnedBadges.includes(raw.activeBadge)) {
+    base.activeBadge = raw.activeBadge;
+  } else if (base.earnedBadges.length > 0) {
+    base.activeBadge = base.earnedBadges[0] ?? null;
+  }
+  return base;
+}
+
+/**
+ * @param {any} passport
+ * @param {number} discoveredSpeciesCount
+ * @param {string} [nowIso]
+ */
+function evaluatePassportAchievementsServer(passport, discoveredSpeciesCount, nowIso = new Date().toISOString()) {
+  const stampedCount = VALID_PASSPORT_ZONE_IDS.filter(
+    (zid) => passport.stamps[zid]?.obtained
+  ).length;
+  /** @type {Record<string, number>} */
+  const counts = {
+    'ach-first-stamp': Math.min(1, stampedCount),
+    'ach-world-explorer': Math.min(5, stampedCount),
+    'ach-first-animal': Math.min(1, discoveredSpeciesCount),
+    'ach-zoologist': Math.min(3, discoveredSpeciesCount),
+    'ach-social-greeting': Math.min(1, passport.socialInteractionsCount),
+    'ach-keeper-helper': Math.min(1, passport.activitiesCompletedCount)
+  };
+  for (const aid of VALID_ACHIEVEMENT_IDS) {
+    const rec = passport.achievements[aid];
+    if (!rec) continue;
+    const progress = Math.max(rec.progressCount, counts[aid] ?? 0);
+    const unlocked = rec.unlocked || progress >= rec.targetCount;
+    rec.progressCount = unlocked ? rec.targetCount : progress;
+    if (unlocked && !rec.unlocked) {
+      rec.unlocked = true;
+      rec.unlockedAt = nowIso;
+    }
+  }
+  passport.updatedAt = nowIso;
+  return passport;
+}
+
 const VALID_REPORT_REASONS = new Set([
   'inappropriate-chat',
   'harassment-spam',
@@ -285,7 +546,11 @@ const PANDA_FOREST_OBSTACLES = [
   { id: 'collider-prop-wind-chime', position: [7.5, 0, -6.0], radius: 0.75 },
   { id: 'collider-prop-scenic-bench', position: [-2.5, 0, -13.0], radius: 0.5 },
   { id: 'collider-prop-plaza-bench', position: [-3.2, 0, 15.0], radius: 0.5 },
-  { id: 'collider-prop-pond-chair', position: [-0.8, 0, 1.5], radius: 0.45 }
+  { id: 'collider-prop-pond-chair', position: [-0.8, 0, 1.5], radius: 0.45 },
+  { id: 'collider-prop-plaza-food-stall', position: [-6.8, 0, 12.2], radius: 0.9 },
+  { id: 'collider-prop-bamboo-tea-stall', position: [11.8, 0, 5.6], radius: 0.9 },
+  { id: 'collider-prop-plaza-cafe-table', position: [-3.8, 0, 12.6], radius: 0.45 },
+  { id: 'collider-prop-bamboo-picnic-table', position: [10.8, 0, 0.8], radius: 0.45 }
 ];
 
 function createInitialSeatStatesServer() {
@@ -345,6 +610,98 @@ function createInitialSeatStatesServer() {
         label: 'Center Seat',
         worldPosition: [-0.8, 0.1, 2.48],
         facingYaw: -0.45,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      }
+    ],
+    'prop-plaza-cafe-table': [
+      {
+        objectId: 'prop-plaza-cafe-table',
+        seatIndex: 0,
+        label: 'North Seat',
+        worldPosition: [-3.8, 0.1, 11.62],
+        facingYaw: 0,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-plaza-cafe-table',
+        seatIndex: 1,
+        label: 'East Seat',
+        worldPosition: [-2.82, 0.1, 12.6],
+        facingYaw: -Math.PI / 2,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-plaza-cafe-table',
+        seatIndex: 2,
+        label: 'South Seat',
+        worldPosition: [-3.8, 0.1, 13.58],
+        facingYaw: Math.PI,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-plaza-cafe-table',
+        seatIndex: 3,
+        label: 'West Seat',
+        worldPosition: [-4.78, 0.1, 12.6],
+        facingYaw: Math.PI / 2,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      }
+    ],
+    'prop-bamboo-picnic-table': [
+      {
+        objectId: 'prop-bamboo-picnic-table',
+        seatIndex: 0,
+        label: 'West Front Seat',
+        worldPosition: [9.82, 0.1, 1.25],
+        facingYaw: Math.PI / 2,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-bamboo-picnic-table',
+        seatIndex: 1,
+        label: 'West Back Seat',
+        worldPosition: [9.82, 0.1, 0.35],
+        facingYaw: Math.PI / 2,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-bamboo-picnic-table',
+        seatIndex: 2,
+        label: 'East Front Seat',
+        worldPosition: [11.78, 0.1, 1.25],
+        facingYaw: -Math.PI / 2,
+        occupiedBySessionId: null,
+        occupiedByPlayerId: null,
+        occupiedByDisplayName: null,
+        occupiedAt: 0
+      },
+      {
+        objectId: 'prop-bamboo-picnic-table',
+        seatIndex: 3,
+        label: 'East Back Seat',
+        worldPosition: [11.78, 0.1, 0.35],
+        facingYaw: -Math.PI / 2,
         occupiedBySessionId: null,
         occupiedByPlayerId: null,
         occupiedByDisplayName: null,
@@ -465,7 +822,8 @@ function serializePlayer(record) {
     reconciled: record.transform.reconciled,
     discrepancyDistance: record.transform.discrepancyDistance,
     activeEmote: record.activeEmote ? { ...record.activeEmote } : null,
-    seatedOn: record.seatedOn ? { ...record.seatedOn } : null
+    seatedOn: record.seatedOn ? { ...record.seatedOn } : null,
+    activeConsumption: record.activeConsumption ? { ...record.activeConsumption } : null
   };
 }
 
@@ -475,9 +833,285 @@ const knownPlayerNames = new Map();
 const friendships = new Map();
 const pendingFriendRequests = new Map();
 const blockedPlayers = new Map();
+const playerAllowFriendJoin = new Map();
 const chatRateHistory = new Map();
+const playerWallets = new Map();
+const processedPurchaseRequests = new Map();
+const playerPassports = new Map();
+const playerDiscoveredSpecies = new Map();
+const processedRewardClaims = new Map();
+const processedEventRewardClaims = new Map();
 /** @type {any[]} */
 const moderationReports = [];
+
+const VALID_SEASONAL_THEMES = new Set([
+  'spring-blossom',
+  'summer-lantern',
+  'autumn-harvest',
+  'none'
+]);
+
+const VALID_EVENT_STATUSES = new Set(['upcoming', 'active', 'finished']);
+
+/** @type {Record<string, { eventId: string; title: string; zoneId: string; zoneName: string; defaultStatus: string; defaultStartOffsetMs: number; defaultDurationMs: number; defaultMaxParticipants: number; targetProgress: number; rewardCoins: number; icon: string; locationLabel: string; isSeasonal?: boolean }>} */
+const SERVER_EVENTS_CATALOG = {
+  'event-panda-feeding-gala': {
+    eventId: 'event-panda-feeding-gala',
+    title: 'Giant Panda Bamboo Feast',
+    zoneId: 'zone-panda-sanctuary',
+    zoneName: 'Misty Bamboo Grove Sanctuary',
+    defaultStatus: 'active',
+    defaultStartOffsetMs: -5 * 60 * 1000,
+    defaultDurationMs: 30 * 60 * 1000,
+    defaultMaxParticipants: 8,
+    targetProgress: 3,
+    rewardCoins: 20,
+    icon: '🐼',
+    locationLabel: 'Misty Bamboo Grove Sanctuary (East Terrace)'
+  },
+  'event-penguin-dive-show': {
+    eventId: 'event-penguin-dive-show',
+    title: 'Glacier Cove Penguin Splash',
+    zoneId: 'zone-penguin-cove',
+    zoneName: 'Glacier Cove Coastal Pool',
+    defaultStatus: 'upcoming',
+    defaultStartOffsetMs: 10 * 60 * 1000,
+    defaultDurationMs: 25 * 60 * 1000,
+    defaultMaxParticipants: 8,
+    targetProgress: 3,
+    rewardCoins: 20,
+    icon: '🐧',
+    locationLabel: 'Glacier Cove Coastal Pool (West Ledges)'
+  },
+  'event-guided-sanctuary-tour': {
+    eventId: 'event-guided-sanctuary-tour',
+    title: "Ranger's Guided Sanctuary Tour",
+    zoneId: 'zone-welcome-plaza',
+    zoneName: 'Welcome Plaza & Courtyard',
+    defaultStatus: 'active',
+    defaultStartOffsetMs: -2 * 60 * 1000,
+    defaultDurationMs: 40 * 60 * 1000,
+    defaultMaxParticipants: 12,
+    targetProgress: 3,
+    rewardCoins: 25,
+    icon: '🗺️',
+    locationLabel: 'Welcome Plaza & Courtyard (South Gate)'
+  },
+  'event-plaza-group-photo': {
+    eventId: 'event-plaza-group-photo',
+    title: 'Golden Hour Group Photo',
+    zoneId: 'zone-wind-chime-lookout',
+    zoneName: 'Northern Wind-Chime Lookout',
+    defaultStatus: 'upcoming',
+    defaultStartOffsetMs: 20 * 60 * 1000,
+    defaultDurationMs: 20 * 60 * 1000,
+    defaultMaxParticipants: 10,
+    targetProgress: 2,
+    rewardCoins: 20,
+    icon: '📸',
+    locationLabel: 'Northern Wind-Chime Lookout (North Ridge)'
+  },
+  'event-lantern-trivia-game': {
+    eventId: 'event-lantern-trivia-game',
+    title: 'Seasonal Lotus Stream Mini-Game',
+    zoneId: 'zone-lotus-stream',
+    zoneName: 'Highland Spring & Otter Stream',
+    defaultStatus: 'active',
+    defaultStartOffsetMs: -3 * 60 * 1000,
+    defaultDurationMs: 45 * 60 * 1000,
+    defaultMaxParticipants: 8,
+    targetProgress: 2,
+    rewardCoins: 25,
+    icon: '🏮',
+    locationLabel: 'Highland Spring & Otter Stream (Central Pond)',
+    isSeasonal: true
+  }
+};
+
+const ORDERED_EVENT_IDS = [
+  'event-panda-feeding-gala',
+  'event-penguin-dive-show',
+  'event-guided-sanctuary-tour',
+  'event-plaza-group-photo',
+  'event-lantern-trivia-game'
+];
+
+function createInitialRoomEventsServer(now = Date.now(), seasonalTheme = 'spring-blossom') {
+  /** @type {Record<string, any>} */
+  const map = {};
+  for (const eventId of ORDERED_EVENT_IDS) {
+    const desc = SERVER_EVENTS_CATALOG[eventId];
+    if (!desc) continue;
+    const startTimeMs = now + desc.defaultStartOffsetMs;
+    const endTimeMs = startTimeMs + desc.defaultDurationMs;
+    map[eventId] = {
+      eventId,
+      eventInstanceId: `evinst_${eventId}_1`,
+      instanceSeq: 1,
+      status: desc.isSeasonal && seasonalTheme === 'none' ? 'finished' : desc.defaultStatus,
+      startTimeMs,
+      endTimeMs,
+      maxParticipants: desc.defaultMaxParticipants,
+      participantSessionIds: [],
+      participantPlayerIds: [],
+      contributedPlayerIds: [],
+      claimedPlayerIds: [],
+      sharedProgressCount: 0,
+      targetProgress: desc.targetProgress,
+      rewardCoins: desc.rewardCoins
+    };
+  }
+  return map;
+}
+
+/**
+ * @param {any} room
+ */
+function buildRoomEventsSnapshotServer(room) {
+  return {
+    seasonalTheme: room.seasonalTheme || 'spring-blossom',
+    events: ORDERED_EVENT_IDS.map((id) => {
+      const ev = room.events[id];
+      return {
+        eventId: ev.eventId,
+        eventInstanceId: ev.eventInstanceId,
+        status: ev.status,
+        startTimeMs: ev.startTimeMs,
+        endTimeMs: ev.endTimeMs,
+        maxParticipants: ev.maxParticipants,
+        participantSessionIds: [...ev.participantSessionIds],
+        participantPlayerIds: [...ev.participantPlayerIds],
+        contributedPlayerIds: [...ev.contributedPlayerIds],
+        claimedPlayerIds: [...ev.claimedPlayerIds],
+        sharedProgressCount: ev.sharedProgressCount,
+        targetProgress: ev.targetProgress,
+        rewardCoins: ev.rewardCoins
+      };
+    })
+  };
+}
+
+/**
+ * @param {any} room
+ * @param {string} sessionId
+ * @param {string} [playerId]
+ * @param {number} [now]
+ */
+function removeEventParticipantSessionServer(room, sessionId, playerId, now = Date.now()) {
+  if (!room || !room.events) return null;
+  let changed = false;
+  for (const eventId of ORDERED_EVENT_IDS) {
+    const ev = room.events[eventId];
+    if (!ev) continue;
+    const prevS = ev.participantSessionIds.length;
+    const prevP = ev.participantPlayerIds.length;
+    ev.participantSessionIds = ev.participantSessionIds.filter(
+      /** @param {string} id */ (id) => id !== sessionId
+    );
+    if (playerId) {
+      ev.participantPlayerIds = ev.participantPlayerIds.filter(
+        /** @param {string} id */ (id) => id !== playerId
+      );
+    }
+    if (ev.participantSessionIds.length !== prevS || ev.participantPlayerIds.length !== prevP) {
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  const snap = buildRoomEventsSnapshotServer(room);
+  return {
+    type: 'zoo_events_snapshot',
+    roomId: room.roomId,
+    seasonalTheme: snap.seasonalTheme,
+    events: snap.events,
+    serverTimestamp: now
+  };
+}
+
+/**
+ * @param {string} playerId
+ * @returns {Set<string>}
+ */
+function getOrInitDiscoveredSpeciesSetServer(playerId) {
+  let s = playerDiscoveredSpecies.get(playerId);
+  if (!s) {
+    s = new Set();
+    playerDiscoveredSpecies.set(playerId, s);
+  }
+  return s;
+}
+
+/**
+ * @param {string} playerId
+ * @param {any} [initialSnapshot]
+ * @param {string} [nowIso]
+ */
+function getOrInitPlayerPassportServer(playerId, initialSnapshot, nowIso = new Date().toISOString()) {
+  const existing = playerPassports.get(playerId);
+  const incoming = initialSnapshot ? sanitizePassportStateServer(initialSnapshot, nowIso) : null;
+  if (!existing) {
+    const created = incoming || createDefaultPassportStateServer(nowIso);
+    playerPassports.set(playerId, created);
+    return created;
+  }
+  if (incoming) {
+    for (const zid of VALID_PASSPORT_ZONE_IDS) {
+      const incS = incoming.stamps[zid];
+      const exS = existing.stamps[zid];
+      if (incS?.obtained && exS && !exS.obtained) {
+        existing.stamps[zid] = { ...incS };
+      }
+    }
+    for (const aid of VALID_ACHIEVEMENT_IDS) {
+      const incA = incoming.achievements[aid];
+      const exA = existing.achievements[aid];
+      if (incA && exA) {
+        if (incA.progressCount > exA.progressCount) exA.progressCount = incA.progressCount;
+        if (incA.unlocked && !exA.unlocked) {
+          exA.unlocked = true;
+          exA.unlockedAt = incA.unlockedAt || nowIso;
+        }
+        if (incA.claimed && !exA.claimed) {
+          exA.claimed = true;
+          exA.claimedAt = incA.claimedAt || nowIso;
+        }
+      }
+    }
+    existing.socialInteractionsCount = Math.max(
+      existing.socialInteractionsCount,
+      incoming.socialInteractionsCount
+    );
+    existing.activitiesCompletedCount = Math.max(
+      existing.activitiesCompletedCount,
+      incoming.activitiesCompletedCount
+    );
+    for (const b of incoming.earnedBadges) {
+      if (!existing.earnedBadges.includes(b)) existing.earnedBadges.push(b);
+    }
+    if (!existing.activeBadge && incoming.activeBadge) {
+      existing.activeBadge = incoming.activeBadge;
+    }
+    const speciesSet = getOrInitDiscoveredSpeciesSetServer(playerId);
+    evaluatePassportAchievementsServer(existing, speciesSet.size, nowIso);
+  }
+  return existing;
+}
+
+/**
+ * @param {string} playerId
+ * @param {any} [initialSnapshot]
+ */
+function getOrInitPlayerWalletServer(playerId, initialSnapshot) {
+  let w = playerWallets.get(playerId);
+  if (w) return w;
+  const sanitized = sanitizeDiningWalletServer(initialSnapshot);
+  w = {
+    currencyBalance: sanitized.currencyBalance,
+    inventory: { ...sanitized.inventory }
+  };
+  playerWallets.set(playerId, w);
+  return w;
+}
 
 let globalSessionCounter = 0;
 let globalMessageCounter = 0;
@@ -596,6 +1230,7 @@ function getOrCreateRoom(roomId = 'panda-forest-1') {
   room = {
     roomId,
     maxPlayers: 16,
+    status: 'healthy',
     nextVisitorNumber: 101,
     activeSessions: new Map(),
     resumableSessions: new Map(),
@@ -604,11 +1239,15 @@ function getOrCreateRoom(roomId = 'panda-forest-1') {
       'prop-wind-chime': { active: false, lastTriggeredAt: 0 },
       'prop-scenic-bench': { active: false, lastTriggeredAt: 0 },
       'prop-plaza-bench': { active: false, lastTriggeredAt: 0 },
-      'prop-pond-chair': { active: false, lastTriggeredAt: 0 }
+      'prop-pond-chair': { active: false, lastTriggeredAt: 0 },
+      'prop-plaza-cafe-table': { active: false, lastTriggeredAt: 0 },
+      'prop-bamboo-picnic-table': { active: false, lastTriggeredAt: 0 }
     },
     seatStates: createInitialSeatStatesServer(),
     animals: createInitialAnimalStatesServer(now),
     habitatFeedings: createInitialHabitatFeedingsServer(),
+    seasonalTheme: 'spring-blossom',
+    events: createInitialRoomEventsServer(now, 'spring-blossom'),
     lastScheduledFeedingAt: now,
     recentChatHistory: [],
     tickSequence: 0
@@ -873,29 +1512,115 @@ const DEFAULT_PUBLIC_INSTANCES = [
   { roomId: 'panda-forest-3', label: 'Panda Forest #3 (Quiet Sanctuary)' }
 ];
 
-function getAvailableInstancesServer() {
-  const labelMap = new Map();
-  for (const preset of DEFAULT_PUBLIC_INSTANCES) {
-    labelMap.set(preset.roomId, preset.label);
+const DEFAULT_PUBLIC_ROOM_ID_SET = new Set(DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId));
+
+/** @param {string} playerId */
+function getPlayerAllowFriendJoinServer(playerId) {
+  return playerAllowFriendJoin.get(playerId) ?? true;
+}
+
+/** @param {string} roomId */
+function getInstanceLabelServer(roomId) {
+  const preset = DEFAULT_PUBLIC_INSTANCES.find((p) => p.roomId === roomId);
+  if (preset) return preset.label;
+  const overflowMatch = /^panda-forest-(\d+)$/.exec(roomId);
+  if (overflowMatch) {
+    return `Panda Forest #${overflowMatch[1]} (Overflow Sanctuary)`;
   }
+  return `Custom Instance (${roomId})`;
+}
+
+function pruneEmptyOverflowRoomsServer() {
+  for (const [roomId, room] of rooms.entries()) {
+    if (
+      !DEFAULT_PUBLIC_ROOM_ID_SET.has(roomId) &&
+      room.activeSessions.size === 0 &&
+      room.resumableSessions.size === 0 &&
+      room.status !== 'unhealthy'
+    ) {
+      rooms.delete(roomId);
+    }
+  }
+}
+
+/** @param {string} [forPlayerId] */
+function getAvailableInstancesServer(forPlayerId) {
+  pruneEmptyOverflowRoomsServer();
   const roomIds = new Set(DEFAULT_PUBLIC_INSTANCES.map((p) => p.roomId));
   for (const rid of rooms.keys()) {
     roomIds.add(rid);
   }
+  const friendSet = forPlayerId ? friendships.get(forPlayerId) : undefined;
   const summaries = [];
   for (const rid of roomIds) {
     const r = rooms.get(rid);
     const visitorCount = r ? r.activeSessions.size : 0;
     const maxPlayers = r ? r.maxPlayers : 16;
+    const status = r ? r.status || 'healthy' : 'healthy';
+    let friendCount = 0;
+    if (forPlayerId && friendSet && r) {
+      for (const s of r.activeSessions.values()) {
+        if (
+          s.playerId !== forPlayerId &&
+          friendSet.has(s.playerId) &&
+          !isPlayerBlockedServer(forPlayerId, s.playerId)
+        ) {
+          friendCount += 1;
+        }
+      }
+    }
     summaries.push({
       roomId: rid,
-      label: labelMap.get(rid) || `Custom Instance (${rid})`,
+      label: getInstanceLabelServer(rid),
       visitorCount,
       maxPlayers,
-      isFull: visitorCount >= maxPlayers
+      isFull: visitorCount >= maxPlayers,
+      status,
+      friendCount,
+      isOverflow: !DEFAULT_PUBLIC_ROOM_ID_SET.has(rid)
     });
   }
   return summaries;
+}
+
+/**
+ * @param {string} playerId
+ * @param {string} [keepSessionId]
+ * @param {number} [now]
+ */
+function purgeDuplicatePlayerSessionsServer(playerId, keepSessionId, now = Date.now()) {
+  if (!playerId) return;
+  for (const room of rooms.values()) {
+    for (const [sid, s] of room.activeSessions.entries()) {
+      if (s.playerId === playerId && sid !== keepSessionId) {
+        const releasedSeat = releasePlayerSeatServer(room, s, now);
+        if (releasedSeat) broadcastToRoom(room.roomId, releasedSeat);
+        const evUpdate = removeEventParticipantSessionServer(room, sid, s.playerId, now);
+        if (evUpdate) broadcastToRoom(room.roomId, evUpdate);
+        room.activeSessions.delete(sid);
+        sessionToRoom.delete(sid);
+        room.resumableSessions.delete(s.resumeToken);
+        broadcastToRoom(
+          room.roomId,
+          {
+            type: 'player_left',
+            roomId: room.roomId,
+            sessionId: sid,
+            reason: 'switched_room',
+            visitorCount: room.activeSessions.size,
+            serverTimestamp: now
+          },
+          sid
+        );
+      }
+    }
+    for (const [tok, entry] of room.resumableSessions.entries()) {
+      if (entry.record.playerId === playerId && entry.record.sessionId !== keepSessionId) {
+        room.resumableSessions.delete(tok);
+      }
+    }
+  }
+  pruneEmptyOverflowRoomsServer();
 }
 
 /**
@@ -930,15 +1655,72 @@ function ensureSessionActiveServer(binding, now = Date.now()) {
   return null;
 }
 
-function selectAvailableRoom(requestedRoomId = 'panda-forest-1') {
-  const primary = getOrCreateRoom(requestedRoomId);
-  if (primary.activeSessions.size < primary.maxPlayers) return primary;
-  const prefix = requestedRoomId.replace(/-\d+$/, '');
-  for (let i = 2; i < 100; i++) {
-    const r = getOrCreateRoom(`${prefix}-${i}`);
-    if (r.activeSessions.size < r.maxPlayers) return r;
+/**
+ * @param {string} [requestedRoomId]
+ * @param {{ playerId?: string; friendPlayerIds?: string[]; preferFriendPlacement?: boolean; excludeRoomId?: string }} [options]
+ */
+function selectAvailableRoomWithReasonServer(requestedRoomId = 'panda-forest-1', options = {}) {
+  if (options.preferFriendPlacement && options.playerId) {
+    const candidateFriendIds = new Set(options.friendPlayerIds || []);
+    const storedFriends = friendships.get(options.playerId);
+    if (storedFriends) {
+      for (const fid of storedFriends) candidateFriendIds.add(fid);
+    }
+    for (const fid of candidateFriendIds) {
+      if (fid === options.playerId || isPlayerBlockedServer(options.playerId, fid)) continue;
+      if (!getPlayerAllowFriendJoinServer(fid)) continue;
+      const friendSession = findActiveSessionByPlayerIdServer(fid);
+      if (!friendSession) continue;
+      const friendRoom = rooms.get(friendSession.roomId);
+      if (
+        friendRoom &&
+        friendRoom.roomId !== options.excludeRoomId &&
+        friendRoom.status !== 'unhealthy' &&
+        friendRoom.activeSessions.size < friendRoom.maxPlayers
+      ) {
+        return {
+          room: friendRoom,
+          placementReason: 'friend_priority',
+          placementNotice: `Joined ${friendSession.baseDisplayName} in ${getInstanceLabelServer(friendRoom.roomId)}!`
+        };
+      }
+    }
   }
-  return primary;
+
+  const primary = getOrCreateRoom(requestedRoomId);
+  if (
+    primary.roomId !== options.excludeRoomId &&
+    primary.status !== 'unhealthy' &&
+    primary.activeSessions.size < primary.maxPlayers
+  ) {
+    return {
+      room: primary,
+      placementReason: 'requested'
+    };
+  }
+
+  const prefix = requestedRoomId.replace(/-\d+$/, '');
+  for (let i = 1; i < 100; i++) {
+    const candidateId = `${prefix}-${i}`;
+    if (candidateId === options.excludeRoomId) continue;
+    const r = getOrCreateRoom(candidateId);
+    if (r.status !== 'unhealthy' && r.activeSessions.size < r.maxPlayers) {
+      const reasonDesc =
+        primary.status === 'unhealthy' || primary.roomId === options.excludeRoomId
+          ? 'unavailable'
+          : `full (${primary.activeSessions.size}/${primary.maxPlayers})`;
+      return {
+        room: r,
+        placementReason: 'overflow_redirect',
+        placementNotice: `${getInstanceLabelServer(requestedRoomId)} is currently ${reasonDesc}. Placed in ${getInstanceLabelServer(r.roomId)}.`
+      };
+    }
+  }
+
+  return {
+    room: primary,
+    placementReason: 'requested'
+  };
 }
 
 /**
@@ -956,6 +1738,8 @@ function buildSocialPresenceMessage(playerId, now = Date.now()) {
     const activeRoom = activeSession ? rooms.get(activeSession.roomId) : null;
     const roomVisitorCount = activeRoom ? activeRoom.activeSessions.size : 0;
     const roomMaxPlayers = activeRoom ? activeRoom.maxPlayers : 16;
+    const roomStatus = activeRoom ? activeRoom.status || 'healthy' : 'healthy';
+    const friendAllowJoin = getPlayerAllowFriendJoinServer(fid);
     const displayName = activeSession?.baseDisplayName || knownPlayerNames.get(fid) || fid;
     friends.push({
       playerId: fid,
@@ -964,7 +1748,14 @@ function buildSocialPresenceMessage(playerId, now = Date.now()) {
       roomId: activeSession ? activeSession.roomId : null,
       roomVisitorCount,
       roomMaxPlayers,
-      canJoin: Boolean(activeSession && roomVisitorCount < roomMaxPlayers)
+      canJoin: Boolean(
+        activeSession &&
+          roomStatus === 'healthy' &&
+          friendAllowJoin &&
+          roomVisitorCount < roomMaxPlayers
+      ),
+      allowFriendJoin: friendAllowJoin,
+      roomStatus
     });
   }
 
@@ -984,7 +1775,7 @@ function buildSocialPresenceMessage(playerId, now = Date.now()) {
     incomingRequests,
     outgoingRequests,
     blockedPlayerIds: Array.from(blockSet),
-    availableInstances: getAvailableInstancesServer(),
+    availableInstances: getAvailableInstancesServer(playerId),
     serverTimestamp: now
   };
 }
@@ -1134,17 +1925,71 @@ wss.on('connection', (ws, req) => {
           ? parsed.roomId
           : binding.roomId;
       const resumeToken = typeof parsed.resumeToken === 'string' ? parsed.resumeToken : null;
+      const incomingPlayerId =
+        typeof parsed.playerId === 'string' && /^[a-zA-Z0-9_-]{8,64}$/.test(parsed.playerId)
+          ? parsed.playerId
+          : null;
+
+      if (incomingPlayerId) {
+        if (typeof parsed.allowFriendJoin === 'boolean') {
+          playerAllowFriendJoin.set(incomingPlayerId, parsed.allowFriendJoin);
+        } else if (!playerAllowFriendJoin.has(incomingPlayerId)) {
+          playerAllowFriendJoin.set(incomingPlayerId, true);
+        }
+        if (Array.isArray(parsed.blockedPlayerIds)) {
+          const bset = getOrCreateBlockSet(incomingPlayerId);
+          for (const bid of parsed.blockedPlayerIds) {
+            if (typeof bid === 'string' && bid !== incomingPlayerId) bset.add(bid);
+          }
+        }
+        if (Array.isArray(parsed.friendPlayerIds)) {
+          const fset = getOrCreateFriendSet(incomingPlayerId);
+          for (const fid of parsed.friendPlayerIds) {
+            if (
+              typeof fid === 'string' &&
+              fid !== incomingPlayerId &&
+              !isPlayerBlockedServer(incomingPlayerId, fid)
+            ) {
+              fset.add(fid);
+              getOrCreateFriendSet(fid).add(incomingPlayerId);
+            }
+          }
+        }
+      }
 
       let resumedRecord = null;
       let targetRoom = null;
+      let placementReason = 'requested';
+      let placementNotice = undefined;
 
       if (resumeToken) {
         for (const r of rooms.values()) {
           const entry = r.resumableSessions.get(resumeToken);
-          if (entry && now <= entry.expiresAt && r.activeSessions.size < r.maxPlayers) {
+          if (entry && now <= entry.expiresAt) {
             r.resumableSessions.delete(resumeToken);
+            if (r.status !== 'unhealthy' && r.activeSessions.size < r.maxPlayers) {
+              targetRoom = r;
+              placementReason = 'resumed';
+            } else {
+              const fallback = selectAvailableRoomWithReasonServer(r.roomId, {
+                ...(incomingPlayerId ? { playerId: incomingPlayerId } : {}),
+                ...(Array.isArray(parsed.friendPlayerIds)
+                  ? { friendPlayerIds: parsed.friendPlayerIds }
+                  : {}),
+                preferFriendPlacement: parsed.preferFriendPlacement ?? true,
+                ...(r.status === 'unhealthy' ? { excludeRoomId: r.roomId } : {})
+              });
+              targetRoom = fallback.room;
+              placementReason =
+                r.status === 'unhealthy' ? 'failover_recovery' : fallback.placementReason;
+              placementNotice =
+                r.status === 'unhealthy'
+                  ? `${getInstanceLabelServer(r.roomId)} became unavailable. Automatically recovered your session in ${getInstanceLabelServer(fallback.room.roomId)}.`
+                  : fallback.placementNotice;
+            }
             resumedRecord = {
               ...entry.record,
+              roomId: targetRoom.roomId,
               lastHeartbeatAt: now,
               lastMoveAt: now,
               activeEmote: null,
@@ -1158,14 +2003,22 @@ wss.on('connection', (ws, req) => {
                 discrepancyDistance: 0
               }
             };
-            targetRoom = r;
             break;
           }
         }
       }
 
       if (!targetRoom) {
-        targetRoom = selectAvailableRoom(requestedRoomId);
+        const selected = selectAvailableRoomWithReasonServer(requestedRoomId, {
+          ...(incomingPlayerId ? { playerId: incomingPlayerId } : {}),
+          ...(Array.isArray(parsed.friendPlayerIds)
+            ? { friendPlayerIds: parsed.friendPlayerIds }
+            : {}),
+          preferFriendPlacement: Boolean(parsed.preferFriendPlacement)
+        });
+        targetRoom = selected.room;
+        placementReason = selected.placementReason;
+        placementNotice = selected.placementNotice;
       }
 
       let record = resumedRecord;
@@ -1175,13 +2028,29 @@ wss.on('connection', (ws, req) => {
         globalSessionCounter += 1;
         const visitorNum = targetRoom.nextVisitorNumber++;
         const sessionId = `sess_${globalSessionCounter.toString(16).padStart(4, '0')}_${visitorNum}`;
-        const playerId =
-          typeof parsed.playerId === 'string' && /^[a-zA-Z0-9_-]{8,64}$/.test(parsed.playerId)
-            ? parsed.playerId
-            : `pid_${sessionId}`;
+        const playerId = incomingPlayerId || `pid_${sessionId}`;
+        if (typeof parsed.allowFriendJoin === 'boolean') {
+          playerAllowFriendJoin.set(playerId, parsed.allowFriendJoin);
+        } else if (!playerAllowFriendJoin.has(playerId)) {
+          playerAllowFriendJoin.set(playerId, true);
+        }
         const newToken = `tok_${sessionId}_${Math.random().toString(36).slice(2, 10)}`;
         const spawnIndex = targetRoom.activeSessions.size;
-        const spawnPosition = computeSpawnPosition(spawnIndex);
+        let spawnPosition = computeSpawnPosition(spawnIndex);
+
+        if (placementReason === 'friend_priority') {
+          const friendSet = getOrCreateFriendSet(playerId);
+          for (const s of targetRoom.activeSessions.values()) {
+            if (friendSet.has(s.playerId)) {
+              const nearPos = resolveHorizontalWorldCollisions(
+                [s.transform.position[0] + 1.4, 0.1, s.transform.position[2] + 1.2],
+                0.45
+              ).position;
+              spawnPosition = [Number(nearPos[0].toFixed(3)), 0.1, Number(nearPos[2].toFixed(3))];
+              break;
+            }
+          }
+        }
 
         let baseDisplayName = `Explorer #${visitorNum}`;
         let hasCustomName = false;
@@ -1280,6 +2149,19 @@ wss.on('connection', (ws, req) => {
         }
       }
 
+      if (parsed.deduplicatePlayerId === true) {
+        purgeDuplicatePlayerSessionsServer(record.playerId, record.sessionId, now);
+      }
+
+      const wallet = getOrInitPlayerWalletServer(record.playerId, parsed.diningWallet);
+      record.currencyBalance = wallet.currencyBalance;
+      record.foodInventory = { ...wallet.inventory };
+      const passport = getOrInitPlayerPassportServer(
+        record.playerId,
+        parsed.passportState,
+        new Date(now).toISOString()
+      );
+
       targetRoom.activeSessions.set(record.sessionId, record);
       sessionToRoom.set(record.sessionId, targetRoom.roomId);
       knownPlayerNames.set(record.playerId, record.baseDisplayName);
@@ -1298,15 +2180,24 @@ wss.on('connection', (ws, req) => {
         accentColor: record.accentColor,
         avatar: { ...record.avatar },
         resumed: wasResumed,
+        placementReason,
+        ...(placementNotice ? { placementNotice } : {}),
+        allowFriendJoin: getPlayerAllowFriendJoinServer(record.playerId),
         spawnPosition: [...record.transform.position],
         spawnYaw: record.transform.facingYaw,
         serverTimestamp: now,
         players,
         propStates: targetRoom.propStates,
         seatStates: targetRoom.seatStates,
-        availableInstances: getAvailableInstancesServer(),
+        availableInstances: getAvailableInstancesServer(record.playerId),
         animals: targetRoom.animals,
-        habitatFeedings: targetRoom.habitatFeedings
+        habitatFeedings: targetRoom.habitatFeedings,
+        diningWallet: {
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory }
+        },
+        passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
       });
 
       broadcastToRoom(
@@ -1475,6 +2366,27 @@ wss.on('connection', (ws, req) => {
         reconciled,
         discrepancyDistance
       };
+
+      const nowIso = new Date(now).toISOString();
+      const passport = getOrInitPlayerPassportServer(session.playerId, undefined, nowIso);
+      let anyStamped = false;
+      for (const z of SERVER_PASSPORT_ZONES) {
+        if (passport.stamps[z.zoneId]?.obtained) continue;
+        const zdx = fx - z.center[0];
+        const zdz = fz - z.center[2];
+        if (Math.hypot(zdx, zdz) <= z.radiusMeters) {
+          passport.stamps[z.zoneId] = {
+            zoneId: z.zoneId,
+            obtained: true,
+            stampedAt: nowIso
+          };
+          anyStamped = true;
+        }
+      }
+      if (anyStamped) {
+        const spSet = getOrInitDiscoveredSpeciesSetServer(session.playerId);
+        evaluatePassportAchievementsServer(passport, spSet.size, nowIso);
+      }
     } else if (parsed.type === 'send_chat_message') {
       if (!binding.sessionId) return;
       const room = rooms.get(binding.roomId);
@@ -1519,6 +2431,15 @@ wss.on('connection', (ws, req) => {
         room.recentChatHistory.splice(0, room.recentChatHistory.length - 50);
       }
 
+      const nowIso = new Date(now).toISOString();
+      const senderPassport = getOrInitPlayerPassportServer(sender.playerId, undefined, nowIso);
+      senderPassport.socialInteractionsCount += 1;
+      evaluatePassportAchievementsServer(
+        senderPassport,
+        getOrInitDiscoveredSpeciesSetServer(sender.playerId).size,
+        nowIso
+      );
+
       const recipientSessionIds = [];
       for (const target of room.activeSessions.values()) {
         if (isPlayerBlockedServer(target.playerId, sender.playerId)) continue;
@@ -1552,6 +2473,14 @@ wss.on('connection', (ws, req) => {
           startedAt: now,
           expiresAt: now + desc.durationMs
         };
+        const nowIso = new Date(now).toISOString();
+        const senderPassport = getOrInitPlayerPassportServer(sender.playerId, undefined, nowIso);
+        senderPassport.socialInteractionsCount += 1;
+        evaluatePassportAchievementsServer(
+          senderPassport,
+          getOrInitDiscoveredSpeciesSetServer(sender.playerId).size,
+          nowIso
+        );
       }
       sender.activeEmote = activeEmote;
       broadcastToRoom(room.roomId, {
@@ -1621,6 +2550,15 @@ wss.on('connection', (ws, req) => {
         room.propStates[parsed.objectId].active = anyOccupied;
         room.propStates[parsed.objectId].lastTriggeredAt = now;
       }
+
+      const seatNowIso = new Date(now).toISOString();
+      const seatPassport = getOrInitPlayerPassportServer(session.playerId, undefined, seatNowIso);
+      seatPassport.socialInteractionsCount += 1;
+      evaluatePassportAchievementsServer(
+        seatPassport,
+        getOrInitDiscoveredSpeciesSetServer(session.playerId).size,
+        seatNowIso
+      );
 
       broadcastToRoom(room.roomId, {
         type: 'seat_state_updated',
@@ -1745,6 +2683,22 @@ wss.on('connection', (ws, req) => {
         broadcastSocialPresenceToAll(now);
         return;
       }
+      if (targetRoom.status === 'unhealthy') {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INSTANCE_UNAVAILABLE',
+          message: "Friend's zoo instance is currently unavailable."
+        });
+        return;
+      }
+      if (!getPlayerAllowFriendJoinServer(parsed.friendPlayerId)) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'FRIEND_JOIN_DISABLED',
+          message: `${friendSession.baseDisplayName} has disabled direct friend instance joining.`
+        });
+        return;
+      }
       if (targetRoom.activeSessions.size >= targetRoom.maxPlayers) {
         sendJson(ws, {
           type: 'error_notice',
@@ -1756,6 +2710,13 @@ wss.on('connection', (ws, req) => {
 
       const releasedSeat = releasePlayerSeatServer(currentRoom, session, now);
       if (releasedSeat) broadcastToRoom(currentRoom.roomId, releasedSeat);
+      const evUpdate = removeEventParticipantSessionServer(
+        currentRoom,
+        session.sessionId,
+        session.playerId,
+        now
+      );
+      if (evUpdate) broadcastToRoom(currentRoom.roomId, evUpdate);
       currentRoom.activeSessions.delete(session.sessionId);
       broadcastToRoom(
         currentRoom.roomId,
@@ -1796,7 +2757,14 @@ wss.on('connection', (ws, req) => {
       targetRoom.activeSessions.set(session.sessionId, session);
       sessionToRoom.set(session.sessionId, targetRoom.roomId);
       binding.roomId = targetRoom.roomId;
+      pruneEmptyOverflowRoomsServer();
 
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const passport = getOrInitPlayerPassportServer(
+        session.playerId,
+        undefined,
+        new Date(now).toISOString()
+      );
       const players = Array.from(targetRoom.activeSessions.values()).map(serializePlayer);
       sendJson(ws, {
         type: 'welcome_snapshot',
@@ -1808,15 +2776,24 @@ wss.on('connection', (ws, req) => {
         accentColor: session.accentColor,
         avatar: { ...session.avatar },
         resumed: false,
+        placementReason: 'friend_join',
+        placementNotice: `Joined ${friendSession.baseDisplayName} in ${getInstanceLabelServer(targetRoom.roomId)}!`,
+        allowFriendJoin: getPlayerAllowFriendJoinServer(session.playerId),
         spawnPosition: [...session.transform.position],
         spawnYaw: session.transform.facingYaw,
         serverTimestamp: now,
         players,
         propStates: targetRoom.propStates,
         seatStates: targetRoom.seatStates,
-        availableInstances: getAvailableInstancesServer(),
+        availableInstances: getAvailableInstancesServer(session.playerId),
         animals: targetRoom.animals,
-        habitatFeedings: targetRoom.habitatFeedings
+        habitatFeedings: targetRoom.habitatFeedings,
+        diningWallet: {
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory }
+        },
+        passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
       });
 
       broadcastToRoom(
@@ -1852,6 +2829,16 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
+      const existingTarget = rooms.get(requestedRoomId);
+      if (existingTarget && existingTarget.status === 'unhealthy') {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INSTANCE_UNAVAILABLE',
+          message: `Instance ${requestedRoomId} is currently unavailable.`
+        });
+        return;
+      }
+
       const targetRoom = getOrCreateRoom(requestedRoomId);
       if (targetRoom.activeSessions.size >= targetRoom.maxPlayers) {
         sendJson(ws, {
@@ -1864,6 +2851,13 @@ wss.on('connection', (ws, req) => {
 
       const releasedSeat = releasePlayerSeatServer(currentRoom, session, now);
       if (releasedSeat) broadcastToRoom(currentRoom.roomId, releasedSeat);
+      const evUpdate = removeEventParticipantSessionServer(
+        currentRoom,
+        session.sessionId,
+        session.playerId,
+        now
+      );
+      if (evUpdate) broadcastToRoom(currentRoom.roomId, evUpdate);
       currentRoom.activeSessions.delete(session.sessionId);
       broadcastToRoom(
         currentRoom.roomId,
@@ -1901,7 +2895,14 @@ wss.on('connection', (ws, req) => {
       targetRoom.activeSessions.set(session.sessionId, session);
       sessionToRoom.set(session.sessionId, targetRoom.roomId);
       binding.roomId = targetRoom.roomId;
+      pruneEmptyOverflowRoomsServer();
 
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const passport = getOrInitPlayerPassportServer(
+        session.playerId,
+        undefined,
+        new Date(now).toISOString()
+      );
       const players = Array.from(targetRoom.activeSessions.values()).map(serializePlayer);
       sendJson(ws, {
         type: 'welcome_snapshot',
@@ -1913,15 +2914,24 @@ wss.on('connection', (ws, req) => {
         accentColor: session.accentColor,
         avatar: { ...session.avatar },
         resumed: false,
+        placementReason: 'manual_switch',
+        placementNotice: `Switched to ${getInstanceLabelServer(targetRoom.roomId)}.`,
+        allowFriendJoin: getPlayerAllowFriendJoinServer(session.playerId),
         spawnPosition: [...session.transform.position],
         spawnYaw: session.transform.facingYaw,
         serverTimestamp: now,
         players,
         propStates: targetRoom.propStates,
         seatStates: targetRoom.seatStates,
-        availableInstances: getAvailableInstancesServer(),
+        availableInstances: getAvailableInstancesServer(session.playerId),
         animals: targetRoom.animals,
-        habitatFeedings: targetRoom.habitatFeedings
+        habitatFeedings: targetRoom.habitatFeedings,
+        diningWallet: {
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory }
+        },
+        passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
+        zooEvents: buildRoomEventsSnapshotServer(targetRoom)
       });
 
       broadcastToRoom(
@@ -1957,6 +2967,181 @@ wss.on('connection', (ws, req) => {
         }
       } else {
         bset.delete(parsed.targetPlayerId);
+      }
+      broadcastSocialPresenceToAll(now);
+    } else if (parsed.type === 'set_social_privacy') {
+      if (!binding.sessionId || typeof parsed.allowFriendJoin !== 'boolean') return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+      playerAllowFriendJoin.set(session.playerId, parsed.allowFriendJoin);
+      broadcastSocialPresenceToAll(now);
+    } else if (parsed.type === 'configure_instance') {
+      if (!binding.sessionId || typeof parsed.roomId !== 'string') return;
+      const targetRoomId = parsed.roomId.trim();
+      if (!/^[a-zA-Z0-9_-]{3,48}$/.test(targetRoomId)) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'Invalid instance identifier.'
+        });
+        return;
+      }
+      if (
+        parsed.maxPlayers !== undefined &&
+        (!Number.isFinite(Number(parsed.maxPlayers)) ||
+          Number(parsed.maxPlayers) < 1 ||
+          Number(parsed.maxPlayers) > 64)
+      ) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'maxPlayers must be an integer between 1 and 64.'
+        });
+        return;
+      }
+      if (
+        parsed.status !== undefined &&
+        parsed.status !== 'healthy' &&
+        parsed.status !== 'unhealthy'
+      ) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'INVALID_PAYLOAD',
+          message: 'status must be healthy or unhealthy.'
+        });
+        return;
+      }
+
+      const targetRoom = getOrCreateRoom(targetRoomId);
+      if (parsed.maxPlayers !== undefined) {
+        targetRoom.maxPlayers = Math.max(1, Math.min(64, Math.floor(Number(parsed.maxPlayers))));
+      }
+      if (parsed.status !== undefined) {
+        targetRoom.status = parsed.status;
+      }
+
+      if (targetRoom.status === 'unhealthy') {
+        targetRoom.resumableSessions.clear();
+        const sessionsToEvacuate = Array.from(targetRoom.activeSessions.values());
+        for (const s of sessionsToEvacuate) {
+          releasePlayerSeatServer(targetRoom, s, now);
+          removeEventParticipantSessionServer(targetRoom, s.sessionId, s.playerId, now);
+          targetRoom.activeSessions.delete(s.sessionId);
+
+          const fallback = selectAvailableRoomWithReasonServer('panda-forest-1', {
+            playerId: s.playerId,
+            preferFriendPlacement: true,
+            excludeRoomId: targetRoom.roomId
+          });
+          const destRoom = fallback.room;
+          const spawnIndex = destRoom.activeSessions.size;
+          const spawnPos = computeSpawnPosition(spawnIndex);
+
+          s.roomId = destRoom.roomId;
+          s.spawnIndex = spawnIndex;
+          s.displayName = disambiguateDisplayNameServer(
+            destRoom,
+            s.baseDisplayName,
+            s.sessionId,
+            s.playerId
+          );
+          s.activeEmote = null;
+          s.seatedOn = null;
+          s.lastHeartbeatAt = now;
+          s.lastMoveAt = now;
+          s.transform.position = [...spawnPos];
+          s.transform.velocity = [0, 0, 0];
+          s.transform.facingYaw = Math.PI;
+          s.transform.locomotionState = 'Idle';
+
+          destRoom.activeSessions.set(s.sessionId, s);
+          sessionToRoom.set(s.sessionId, destRoom.roomId);
+
+          const wallet = getOrInitPlayerWalletServer(s.playerId);
+          const passport = getOrInitPlayerPassportServer(
+            s.playerId,
+            undefined,
+            new Date(now).toISOString()
+          );
+          const welcome = {
+            type: 'welcome_snapshot',
+            roomId: destRoom.roomId,
+            sessionId: s.sessionId,
+            playerId: s.playerId,
+            resumeToken: s.resumeToken,
+            displayName: s.displayName,
+            accentColor: s.accentColor,
+            avatar: { ...s.avatar },
+            resumed: false,
+            placementReason: 'failover_recovery',
+            placementNotice: `${getInstanceLabelServer(targetRoom.roomId)} became unavailable. Automatically recovered your session in ${getInstanceLabelServer(destRoom.roomId)}.`,
+            allowFriendJoin: getPlayerAllowFriendJoinServer(s.playerId),
+            spawnPosition: [...s.transform.position],
+            spawnYaw: s.transform.facingYaw,
+            serverTimestamp: now,
+            players: Array.from(destRoom.activeSessions.values()).map(serializePlayer),
+            propStates: destRoom.propStates,
+            seatStates: destRoom.seatStates,
+            availableInstances: getAvailableInstancesServer(s.playerId),
+            animals: destRoom.animals,
+            habitatFeedings: destRoom.habitatFeedings,
+            diningWallet: {
+              currencyBalance: wallet.currencyBalance,
+              inventory: { ...wallet.inventory }
+            },
+            passportState: sanitizePassportStateServer(passport, new Date(now).toISOString()),
+            zooEvents: buildRoomEventsSnapshotServer(destRoom)
+          };
+
+          for (const b of bindings) {
+            if (b.sessionId === s.sessionId) {
+              b.roomId = destRoom.roomId;
+              sendJson(b.ws, welcome);
+            }
+          }
+
+          broadcastToRoom(
+            targetRoom.roomId,
+            {
+              type: 'player_left',
+              roomId: targetRoom.roomId,
+              sessionId: s.sessionId,
+              reason: 'switched_room',
+              visitorCount: targetRoom.activeSessions.size,
+              serverTimestamp: now
+            },
+            s.sessionId
+          );
+          broadcastToRoom(
+            destRoom.roomId,
+            {
+              type: 'player_joined',
+              roomId: destRoom.roomId,
+              player: serializePlayer(s),
+              visitorCount: destRoom.activeSessions.size,
+              serverTimestamp: now
+            },
+            s.sessionId
+          );
+        }
+      }
+
+      pruneEmptyOverflowRoomsServer();
+      const notice =
+        targetRoom.status === 'unhealthy'
+          ? `${getInstanceLabelServer(targetRoom.roomId)} marked unavailable.`
+          : `Updated ${getInstanceLabelServer(targetRoom.roomId)} (Capacity: ${targetRoom.maxPlayers}, Status: ${targetRoom.status}).`;
+
+      for (const b of bindings) {
+        if (b.sessionId && b.ws.readyState === WebSocket.OPEN) {
+          sendJson(b.ws, {
+            type: 'instance_directory_update',
+            availableInstances: getAvailableInstancesServer(b.playerId || undefined),
+            notice,
+            serverTimestamp: now
+          });
+        }
       }
       broadcastSocialPresenceToAll(now);
     } else if (parsed.type === 'submit_player_report') {
@@ -2006,6 +3191,14 @@ wss.on('connection', (ws, req) => {
         'player'
       );
       if (feedRes.accepted) {
+        const feedNowIso = new Date(now).toISOString();
+        const feedPassport = getOrInitPlayerPassportServer(session.playerId, undefined, feedNowIso);
+        feedPassport.activitiesCompletedCount += 1;
+        evaluatePassportAchievementsServer(
+          feedPassport,
+          getOrInitDiscoveredSpeciesSetServer(session.playerId).size,
+          feedNowIso
+        );
         broadcastToRoom(room.roomId, {
           type: 'animal_feeding_event',
           roomId: room.roomId,
@@ -2024,6 +3217,719 @@ wss.on('connection', (ws, req) => {
               : 'The animals at this habitat were just fed and are resting. Please wait for the cooldown.'
         });
       }
+    } else if (parsed.type === 'purchase_food_item') {
+      if (
+        !binding.sessionId ||
+        typeof parsed.itemId !== 'string' ||
+        typeof parsed.requestId !== 'string' ||
+        !parsed.requestId.trim()
+      ) {
+        return;
+      }
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const reqId = parsed.requestId.trim();
+      const cacheKey = `${session.playerId}:${reqId}`;
+      const existing = processedPurchaseRequests.get(cacheKey);
+      if (existing) {
+        sendJson(ws, { ...existing, inventory: { ...existing.inventory } });
+        return;
+      }
+
+      const item = SERVER_FOOD_CATALOG[parsed.itemId];
+      if (!item) {
+        sendJson(ws, {
+          type: 'food_purchase_result',
+          requestId: reqId,
+          success: false,
+          itemId: parsed.itemId,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'INVALID_ITEM',
+          message: 'Selected food or drink is not on the stall menu.',
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      if (wallet.currencyBalance < item.price) {
+        sendJson(ws, {
+          type: 'food_purchase_result',
+          requestId: reqId,
+          success: false,
+          itemId: item.id,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'INSUFFICIENT_FUNDS',
+          message: `Not enough Zoo Coins for ${item.name} (costs ${item.price}, you have ${wallet.currencyBalance}).`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      const curQty = wallet.inventory[item.id] ?? 0;
+      if (curQty >= MAX_FOOD_QUANTITY) {
+        sendJson(ws, {
+          type: 'food_purchase_result',
+          requestId: reqId,
+          success: false,
+          itemId: item.id,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'INVENTORY_FULL',
+          message: `Your bag is full of ${item.name}!`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      wallet.currencyBalance -= item.price;
+      wallet.inventory[item.id] = curQty + 1;
+      session.currencyBalance = wallet.currencyBalance;
+      session.foodInventory = { ...wallet.inventory };
+
+      const successRes = {
+        type: 'food_purchase_result',
+        requestId: reqId,
+        success: true,
+        itemId: item.id,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        message: `Purchased ${item.name} (-${item.price} Zoo Coins)!`,
+        serverTimestamp: now
+      };
+      processedPurchaseRequests.set(cacheKey, {
+        ...successRes,
+        inventory: { ...successRes.inventory }
+      });
+      sendJson(ws, successRes);
+    } else if (parsed.type === 'consume_food_item') {
+      if (!binding.sessionId || typeof parsed.itemId !== 'string') return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const item = SERVER_FOOD_CATALOG[parsed.itemId];
+      if (!item) {
+        sendJson(ws, {
+          type: 'food_consume_result',
+          success: false,
+          itemId: parsed.itemId,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'INVALID_ITEM',
+          message: 'Invalid food or drink item.',
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      const curQty = wallet.inventory[item.id] ?? 0;
+      if (curQty <= 0) {
+        sendJson(ws, {
+          type: 'food_consume_result',
+          success: false,
+          itemId: item.id,
+          currencyBalance: wallet.currencyBalance,
+          inventory: { ...wallet.inventory },
+          errorCode: 'ITEM_NOT_OWNED',
+          message: `You do not own any ${item.name} in your bag.`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      wallet.inventory[item.id] = curQty - 1;
+      session.currencyBalance = wallet.currencyBalance;
+      session.foodInventory = { ...wallet.inventory };
+
+      const consumption = {
+        itemId: item.id,
+        label: item.name,
+        category: item.category,
+        icon: item.icon,
+        startedAt: now,
+        expiresAt: now + item.durationMs
+      };
+      session.activeConsumption = consumption;
+
+      const consNowIso = new Date(now).toISOString();
+      const consPassport = getOrInitPlayerPassportServer(session.playerId, undefined, consNowIso);
+      consPassport.activitiesCompletedCount += 1;
+      evaluatePassportAchievementsServer(
+        consPassport,
+        getOrInitDiscoveredSpeciesSetServer(session.playerId).size,
+        consNowIso
+      );
+
+      sendJson(ws, {
+        type: 'food_consume_result',
+        success: true,
+        itemId: item.id,
+        currencyBalance: wallet.currencyBalance,
+        inventory: { ...wallet.inventory },
+        consumption: { ...consumption },
+        message: `${item.gerundLabel} ${item.name}!`,
+        serverTimestamp: now
+      });
+
+      broadcastToRoom(room.roomId, {
+        type: 'player_consumption_updated',
+        roomId: room.roomId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+        consumption: { ...consumption },
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'stop_consuming_food') {
+      if (!binding.sessionId) return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+      session.activeConsumption = null;
+      broadcastToRoom(room.roomId, {
+        type: 'player_consumption_updated',
+        roomId: room.roomId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+        consumption: null,
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'record_passport_progress') {
+      if (!binding.sessionId) return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const nowIso = new Date(now).toISOString();
+      const spSet = getOrInitDiscoveredSpeciesSetServer(session.playerId);
+      if (
+        typeof parsed.speciesId === 'string' &&
+        ['panda', 'penguin', 'otter'].includes(parsed.speciesId)
+      ) {
+        spSet.add(parsed.speciesId);
+      }
+
+      const passport = getOrInitPlayerPassportServer(session.playerId, undefined, nowIso);
+      if (typeof parsed.zoneId === 'string' && VALID_PASSPORT_ZONE_IDS.includes(parsed.zoneId)) {
+        const curStamp = passport.stamps[parsed.zoneId];
+        if (!curStamp || !curStamp.obtained) {
+          passport.stamps[parsed.zoneId] = {
+            zoneId: parsed.zoneId,
+            obtained: true,
+            stampedAt: nowIso
+          };
+        }
+      }
+      if (parsed.socialAction === true) {
+        passport.socialInteractionsCount += 1;
+      }
+      if (parsed.activityCompleted === true) {
+        passport.activitiesCompletedCount += 1;
+      }
+      evaluatePassportAchievementsServer(passport, spSet.size, nowIso);
+    } else if (parsed.type === 'claim_achievement_reward') {
+      if (
+        !binding.sessionId ||
+        typeof parsed.achievementId !== 'string' ||
+        typeof parsed.requestId !== 'string' ||
+        !parsed.requestId.trim()
+      ) {
+        return;
+      }
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const nowIso = new Date(now).toISOString();
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const spSet = getOrInitDiscoveredSpeciesSetServer(session.playerId);
+      const passport = evaluatePassportAchievementsServer(
+        getOrInitPlayerPassportServer(session.playerId, undefined, nowIso),
+        spSet.size,
+        nowIso
+      );
+
+      const reqId = parsed.requestId.trim();
+      const cacheKey = `${session.playerId}:${reqId}`;
+      const existing = processedRewardClaims.get(cacheKey);
+      if (existing) {
+        sendJson(ws, {
+          ...existing,
+          passportState: sanitizePassportStateServer(existing.passportState, nowIso)
+        });
+        return;
+      }
+
+      const desc = SERVER_ACHIEVEMENTS_BY_ID[parsed.achievementId];
+      const rec = passport.achievements[parsed.achievementId];
+      if (!desc || !rec) {
+        sendJson(ws, {
+          type: 'achievement_reward_result',
+          requestId: reqId,
+          success: false,
+          achievementId: parsed.achievementId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'INVALID_ACHIEVEMENT',
+          message: 'Selected achievement does not exist.',
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      if (!rec.unlocked) {
+        sendJson(ws, {
+          type: 'achievement_reward_result',
+          requestId: reqId,
+          success: false,
+          achievementId: desc.achievementId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'ACHIEVEMENT_LOCKED',
+          message: `${desc.title} has not been unlocked yet.`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      if (rec.claimed) {
+        sendJson(ws, {
+          type: 'achievement_reward_result',
+          requestId: reqId,
+          success: false,
+          achievementId: desc.achievementId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'ALREADY_CLAIMED',
+          message: `Reward for ${desc.title} has already been claimed.`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      rec.claimed = true;
+      rec.claimedAt = nowIso;
+      if (!passport.earnedBadges.includes(desc.rewardBadge)) {
+        passport.earnedBadges.push(desc.rewardBadge);
+      }
+      if (!passport.activeBadge) {
+        passport.activeBadge = desc.rewardBadge;
+      }
+      passport.updatedAt = nowIso;
+
+      wallet.currencyBalance += desc.rewardCoins;
+      session.currencyBalance = wallet.currencyBalance;
+
+      const successRes = {
+        type: 'achievement_reward_result',
+        requestId: reqId,
+        success: true,
+        achievementId: desc.achievementId,
+        rewardCoinsGranted: desc.rewardCoins,
+        rewardBadgeGranted: desc.rewardBadge,
+        currencyBalance: wallet.currencyBalance,
+        passportState: sanitizePassportStateServer(passport, nowIso),
+        message: `Claimed +${desc.rewardCoins} Zoo Coins & "${desc.rewardBadge}" Badge!`,
+        serverTimestamp: now
+      };
+      processedRewardClaims.set(cacheKey, {
+        ...successRes,
+        passportState: sanitizePassportStateServer(passport, nowIso)
+      });
+      sendJson(ws, successRes);
+    } else if (parsed.type === 'join_zoo_event') {
+      if (!binding.sessionId || typeof parsed.eventId !== 'string') return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const ev = room.events?.[parsed.eventId];
+      const desc = SERVER_EVENTS_CATALOG[parsed.eventId];
+      if (!ev || !desc) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'EVENT_NOT_ACTIVE',
+          message: 'Unknown zoo event.'
+        });
+        return;
+      }
+
+      if (ev.status !== 'active') {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'EVENT_NOT_ACTIVE',
+          message: `"${desc.title}" is currently ${ev.status} and cannot be joined right now.`
+        });
+        return;
+      }
+
+      const alreadyIn =
+        ev.participantSessionIds.includes(session.sessionId) ||
+        ev.participantPlayerIds.includes(session.playerId);
+      if (!alreadyIn) {
+        if (ev.participantPlayerIds.length >= ev.maxParticipants) {
+          sendJson(ws, {
+            type: 'error_notice',
+            code: 'EVENT_FULL',
+            message: `"${desc.title}" is currently full (${ev.maxParticipants}/${ev.maxParticipants} participants).`
+          });
+          return;
+        }
+        ev.participantSessionIds.push(session.sessionId);
+        ev.participantPlayerIds.push(session.playerId);
+      }
+
+      const snap = buildRoomEventsSnapshotServer(room);
+      broadcastToRoom(room.roomId, {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: snap.seasonalTheme,
+        events: snap.events,
+        notice: `Joined "${desc.title}" (${ev.participantPlayerIds.length}/${ev.maxParticipants} participants)!`,
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'leave_zoo_event') {
+      if (!binding.sessionId || typeof parsed.eventId !== 'string') return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const ev = room.events?.[parsed.eventId];
+      const desc = SERVER_EVENTS_CATALOG[parsed.eventId];
+      if (!ev || !desc) return;
+
+      ev.participantSessionIds = ev.participantSessionIds.filter(
+        /** @param {string} id */ (id) => id !== session.sessionId
+      );
+      ev.participantPlayerIds = ev.participantPlayerIds.filter(
+        /** @param {string} id */ (id) => id !== session.playerId
+      );
+
+      const snap = buildRoomEventsSnapshotServer(room);
+      broadcastToRoom(room.roomId, {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: snap.seasonalTheme,
+        events: snap.events,
+        notice: `Left "${desc.title}". You can rejoin anytime while it remains active.`,
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'perform_event_action') {
+      if (!binding.sessionId || typeof parsed.eventId !== 'string') return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const ev = room.events?.[parsed.eventId];
+      const desc = SERVER_EVENTS_CATALOG[parsed.eventId];
+      if (!ev || !desc || ev.status !== 'active') {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'EVENT_NOT_ACTIVE',
+          message: 'Activity is not currently active.'
+        });
+        return;
+      }
+
+      const isParticipating =
+        ev.participantSessionIds.includes(session.sessionId) ||
+        ev.participantPlayerIds.includes(session.playerId);
+      if (!isParticipating) {
+        sendJson(ws, {
+          type: 'error_notice',
+          code: 'NOT_PARTICIPATING',
+          message: `Join "${desc.title}" first before performing the activity action.`
+        });
+        return;
+      }
+
+      if (!ev.contributedPlayerIds.includes(session.playerId)) {
+        ev.contributedPlayerIds.push(session.playerId);
+      }
+      ev.sharedProgressCount = Math.min(24, ev.sharedProgressCount + 1);
+
+      const snap = buildRoomEventsSnapshotServer(room);
+      broadcastToRoom(room.roomId, {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: snap.seasonalTheme,
+        events: snap.events,
+        notice: `✨ Contributed to "${desc.title}" (${ev.sharedProgressCount}/${ev.targetProgress})! Claim your reward!`,
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'claim_event_reward') {
+      if (
+        !binding.sessionId ||
+        typeof parsed.eventId !== 'string' ||
+        typeof parsed.requestId !== 'string' ||
+        !parsed.requestId.trim()
+      ) {
+        return;
+      }
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const nowIso = new Date(now).toISOString();
+      const wallet = getOrInitPlayerWalletServer(session.playerId);
+      const spSet = getOrInitDiscoveredSpeciesSetServer(session.playerId);
+      const passport = getOrInitPlayerPassportServer(session.playerId, undefined, nowIso);
+      const reqId = parsed.requestId.trim();
+      const cacheKey = `${session.playerId}:${reqId}`;
+      const existing = processedEventRewardClaims.get(cacheKey);
+      if (existing) {
+        sendJson(ws, {
+          ...existing,
+          passportState: sanitizePassportStateServer(existing.passportState, nowIso)
+        });
+        return;
+      }
+
+      const ev = room.events?.[parsed.eventId];
+      const desc = SERVER_EVENTS_CATALOG[parsed.eventId];
+      if (!ev || !desc) {
+        sendJson(ws, {
+          type: 'event_reward_result',
+          requestId: reqId,
+          success: false,
+          eventId: parsed.eventId,
+          eventInstanceId: `evinst_${parsed.eventId}_1`,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'INVALID_EVENT',
+          message: 'Unknown zoo event.',
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      if (ev.claimedPlayerIds.includes(session.playerId)) {
+        sendJson(ws, {
+          type: 'event_reward_result',
+          requestId: reqId,
+          success: false,
+          eventId: desc.eventId,
+          eventInstanceId: ev.eventInstanceId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'ALREADY_CLAIMED',
+          message: `You have already claimed the reward for this "${desc.title}" session.`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      if (!ev.contributedPlayerIds.includes(session.playerId)) {
+        sendJson(ws, {
+          type: 'event_reward_result',
+          requestId: reqId,
+          success: false,
+          eventId: desc.eventId,
+          eventInstanceId: ev.eventInstanceId,
+          rewardCoinsGranted: 0,
+          currencyBalance: wallet.currencyBalance,
+          passportState: sanitizePassportStateServer(passport, nowIso),
+          errorCode: 'REWARD_NOT_ELIGIBLE',
+          message: `Participate in "${desc.title}" before claiming the activity reward.`,
+          serverTimestamp: now
+        });
+        return;
+      }
+
+      ev.claimedPlayerIds.push(session.playerId);
+      wallet.currencyBalance += ev.rewardCoins;
+      session.currencyBalance = wallet.currencyBalance;
+
+      if (!passport.stamps[desc.zoneId]?.obtained) {
+        passport.stamps[desc.zoneId] = {
+          zoneId: desc.zoneId,
+          obtained: true,
+          stampedAt: nowIso
+        };
+      }
+      passport.activitiesCompletedCount += 1;
+      evaluatePassportAchievementsServer(passport, spSet.size, nowIso);
+
+      const successRes = {
+        type: 'event_reward_result',
+        requestId: reqId,
+        success: true,
+        eventId: desc.eventId,
+        eventInstanceId: ev.eventInstanceId,
+        rewardCoinsGranted: ev.rewardCoins,
+        stampedZoneId: desc.zoneId,
+        currencyBalance: wallet.currencyBalance,
+        passportState: sanitizePassportStateServer(passport, nowIso),
+        message: `Claimed +${ev.rewardCoins} Zoo Coins & ${desc.zoneName} Stamp for "${desc.title}"!`,
+        serverTimestamp: now
+      };
+      processedEventRewardClaims.set(cacheKey, {
+        ...successRes,
+        passportState: sanitizePassportStateServer(passport, nowIso)
+      });
+      sendJson(ws, successRes);
+
+      const snap = buildRoomEventsSnapshotServer(room);
+      broadcastToRoom(room.roomId, {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: snap.seasonalTheme,
+        events: snap.events,
+        serverTimestamp: now
+      });
+    } else if (parsed.type === 'configure_zoo_events') {
+      if (!binding.sessionId) return;
+      const room = rooms.get(binding.roomId);
+      const session = room?.activeSessions.get(binding.sessionId);
+      if (!room || !session) return;
+
+      const notices = [];
+      const explicitlyPatched = new Set();
+
+      if (parsed.seasonalTheme !== undefined) {
+        if (!VALID_SEASONAL_THEMES.has(parsed.seasonalTheme)) {
+          sendJson(ws, {
+            type: 'error_notice',
+            code: 'INVALID_EVENT_CONFIG',
+            message: 'Invalid seasonal theme.'
+          });
+          return;
+        }
+      }
+
+      if (parsed.eventPatches !== undefined) {
+        if (!Array.isArray(parsed.eventPatches)) {
+          sendJson(ws, {
+            type: 'error_notice',
+            code: 'INVALID_EVENT_CONFIG',
+            message: 'eventPatches must be an array.'
+          });
+          return;
+        }
+        for (const p of parsed.eventPatches) {
+          if (!p || typeof p !== 'object' || !SERVER_EVENTS_CATALOG[p.eventId]) {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_EVENT_CONFIG',
+              message: 'Invalid event patch.'
+            });
+            return;
+          }
+          if (p.status !== undefined && !VALID_EVENT_STATUSES.has(p.status)) {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_EVENT_CONFIG',
+              message: 'Invalid event status.'
+            });
+            return;
+          }
+          if (
+            p.maxParticipants !== undefined &&
+            (!Number.isFinite(Number(p.maxParticipants)) || Number(p.maxParticipants) < 1)
+          ) {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_EVENT_CONFIG',
+              message: 'Invalid maxParticipants.'
+            });
+            return;
+          }
+          if (
+            p.startTimeMs !== undefined &&
+            p.endTimeMs !== undefined &&
+            Number(p.endTimeMs) <= Number(p.startTimeMs)
+          ) {
+            sendJson(ws, {
+              type: 'error_notice',
+              code: 'INVALID_EVENT_CONFIG',
+              message: 'endTimeMs must be greater than startTimeMs.'
+            });
+            return;
+          }
+        }
+
+        for (const p of parsed.eventPatches) {
+          const ev = room.events[p.eventId];
+          const desc = SERVER_EVENTS_CATALOG[p.eventId];
+          if (!ev || !desc) continue;
+          explicitlyPatched.add(p.eventId);
+          const prevStatus = ev.status;
+          if (p.startTimeMs !== undefined) ev.startTimeMs = Math.floor(Number(p.startTimeMs));
+          if (p.endTimeMs !== undefined) ev.endTimeMs = Math.floor(Number(p.endTimeMs));
+          if (p.maxParticipants !== undefined)
+            ev.maxParticipants = Math.floor(Number(p.maxParticipants));
+          if (p.status !== undefined) ev.status = p.status;
+
+          if (p.resetInstance === true || (prevStatus === 'finished' && ev.status === 'active')) {
+            ev.instanceSeq = (ev.instanceSeq || 1) + 1;
+            ev.eventInstanceId = `evinst_${ev.eventId}_${ev.instanceSeq}`;
+            ev.participantSessionIds = [];
+            ev.participantPlayerIds = [];
+            ev.contributedPlayerIds = [];
+            ev.claimedPlayerIds = [];
+            ev.sharedProgressCount = 0;
+          } else if (ev.status !== 'active') {
+            ev.participantSessionIds = [];
+            ev.participantPlayerIds = [];
+          }
+
+          if (prevStatus !== 'active' && ev.status === 'active') {
+            notices.push(`🎉 ${desc.icon} "${desc.title}" is now active at ${desc.locationLabel}!`);
+          } else if (prevStatus === 'active' && ev.status === 'finished') {
+            notices.push(`🏁 "${desc.title}" has concluded.`);
+          } else {
+            notices.push(`Updated schedule for "${desc.title}".`);
+          }
+        }
+      }
+
+      if (parsed.seasonalTheme !== undefined && parsed.seasonalTheme !== room.seasonalTheme) {
+        room.seasonalTheme = parsed.seasonalTheme;
+        if (!explicitlyPatched.has('event-lantern-trivia-game')) {
+          const seasonalEv = room.events['event-lantern-trivia-game'];
+          if (seasonalEv) {
+            if (room.seasonalTheme === 'none') {
+              seasonalEv.status = 'finished';
+              seasonalEv.participantSessionIds = [];
+              seasonalEv.participantPlayerIds = [];
+            } else if (seasonalEv.status !== 'active') {
+              seasonalEv.instanceSeq = (seasonalEv.instanceSeq || 1) + 1;
+              seasonalEv.eventInstanceId = `evinst_event-lantern-trivia-game_${seasonalEv.instanceSeq}`;
+              seasonalEv.status = 'active';
+              seasonalEv.participantSessionIds = [];
+              seasonalEv.participantPlayerIds = [];
+              seasonalEv.contributedPlayerIds = [];
+              seasonalEv.claimedPlayerIds = [];
+              seasonalEv.sharedProgressCount = 0;
+            }
+          }
+        }
+        notices.unshift(
+          room.seasonalTheme === 'none'
+            ? '🌿 Seasonal festival decorations deactivated (Standard Sanctuary Season).'
+            : `🌸 Seasonal Theme updated to ${room.seasonalTheme}!`
+        );
+      }
+
+      const snap = buildRoomEventsSnapshotServer(room);
+      broadcastToRoom(room.roomId, {
+        type: 'zoo_events_snapshot',
+        roomId: room.roomId,
+        seasonalTheme: snap.seasonalTheme,
+        events: snap.events,
+        notice: notices.join(' ') || 'Updated sanctuary event schedule.',
+        serverTimestamp: now
+      });
     } else if (parsed.type === 'ping') {
       if (binding.sessionId) {
         const room = rooms.get(binding.roomId);
@@ -2044,9 +3950,17 @@ wss.on('connection', (ws, req) => {
       if (room && session) {
         const releasedSeat = releasePlayerSeatServer(room, session, now);
         if (releasedSeat) broadcastToRoom(room.roomId, releasedSeat);
+        const evUpdate = removeEventParticipantSessionServer(
+          room,
+          session.sessionId,
+          session.playerId,
+          now
+        );
+        if (evUpdate) broadcastToRoom(room.roomId, evUpdate);
         room.activeSessions.delete(sid);
         sessionToRoom.delete(sid);
         room.resumableSessions.delete(session.resumeToken);
+        pruneEmptyOverflowRoomsServer();
         broadcastToRoom(
           room.roomId,
           {
@@ -2075,6 +3989,13 @@ wss.on('connection', (ws, req) => {
         const now = Date.now();
         const releasedSeat = releasePlayerSeatServer(room, session, now);
         if (releasedSeat) broadcastToRoom(room.roomId, releasedSeat);
+        const evUpdate = removeEventParticipantSessionServer(
+          room,
+          session.sessionId,
+          session.playerId,
+          now
+        );
+        if (evUpdate) broadcastToRoom(room.roomId, evUpdate);
         room.activeSessions.delete(sid);
         sessionToRoom.delete(sid);
         room.resumableSessions.set(session.resumeToken, {
@@ -2113,10 +4034,20 @@ setInterval(() => {
       if (session.activeEmote && session.activeEmote.expiresAt <= now) {
         session.activeEmote = null;
       }
+      if (session.activeConsumption && session.activeConsumption.expiresAt <= now) {
+        session.activeConsumption = null;
+      }
       if (now - session.lastHeartbeatAt > 8000) {
         anyPruned = true;
         const releasedSeat = releasePlayerSeatServer(room, session, now);
         if (releasedSeat) broadcastToRoom(room.roomId, releasedSeat);
+        const evUpdate = removeEventParticipantSessionServer(
+          room,
+          session.sessionId,
+          session.playerId,
+          now
+        );
+        if (evUpdate) broadcastToRoom(room.roomId, evUpdate);
         room.activeSessions.delete(session.sessionId);
         sessionToRoom.delete(session.sessionId);
         room.resumableSessions.set(session.resumeToken, {

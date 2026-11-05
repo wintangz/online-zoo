@@ -1,25 +1,56 @@
 import type {
+  AchievementRewardErrorCode,
   ActiveAvatarEmote,
+  ActiveFoodConsumption,
   AvatarAppearance,
   EmoteId,
+  EventErrorCode,
+  FoodConsumeErrorCode,
+  FoodPurchaseErrorCode,
   FriendRequestRecord,
   FriendStatusEntry,
+  InstancePlacementReason,
   LocomotionState,
   PlayerModerationReport,
   ProximityChatMessage,
   ReportReason,
   SeatedAttachmentState,
   WorldSeatOccupancyState,
+  ZooInstanceHealthStatus,
   ZooInstanceSummary
 } from '../types';
 import { isValidEmoteId } from '../social/emoteCatalog';
 import { isValidReportReason } from '../social/socialPersistence';
 import {
+  ANIMAL_SPECIES_IDS,
   ZOO_HABITAT_ZONES,
   type AnimalInstanceState,
+  type AnimalSpeciesId,
   type HabitatFeedingState,
   type HabitatId
 } from '../animals';
+import {
+  isValidFoodItemId,
+  sanitizeDiningWalletSnapshot,
+  type FoodInventoryRecord,
+  type FoodItemId
+} from '../dining';
+import {
+  isValidAchievementId,
+  isValidPassportZoneId,
+  sanitizePlayerPassportState,
+  type AchievementId,
+  type PassportZoneId,
+  type PlayerPassportState
+} from '../passport';
+import {
+  isValidZooEventId,
+  sanitizeEventAdministrationConfig,
+  type LiveZooEventState,
+  type SeasonalThemeId,
+  type ZooEventAdminPatch,
+  type ZooEventId
+} from '../events';
 
 export const MAX_PAYLOAD_BYTES = 4096;
 export const DEFAULT_ROOM_ID = 'panda-forest-1';
@@ -75,12 +106,19 @@ export function deriveAccentColorFromSessionId(sessionId: string): string {
 export interface JoinInstanceMessage {
   type: 'join_instance';
   roomId?: string;
+  preferFriendPlacement?: boolean;
+  allowFriendJoin?: boolean;
   resumeToken?: string | null;
   playerId?: string;
   displayName?: string;
   avatar?: AvatarAppearance;
   friendPlayerIds?: string[];
   blockedPlayerIds?: string[];
+  diningWallet?: {
+    currencyBalance: number;
+    inventory: FoodInventoryRecord;
+  };
+  passportState?: PlayerPassportState;
 }
 
 export interface UpdateIdentityMessage {
@@ -173,6 +211,75 @@ export interface TriggerAnimalFeedingMessage {
   habitatId: HabitatId;
 }
 
+export interface PurchaseFoodItemMessage {
+  type: 'purchase_food_item';
+  itemId: FoodItemId;
+  requestId: string;
+  stallId?: string;
+}
+
+export interface ConsumeFoodItemMessage {
+  type: 'consume_food_item';
+  itemId: FoodItemId;
+}
+
+export interface StopConsumingFoodMessage {
+  type: 'stop_consuming_food';
+}
+
+export interface RecordPassportProgressMessage {
+  type: 'record_passport_progress';
+  zoneId?: PassportZoneId;
+  speciesId?: AnimalSpeciesId;
+  socialAction?: boolean;
+  activityCompleted?: boolean;
+}
+
+export interface ClaimAchievementRewardMessage {
+  type: 'claim_achievement_reward';
+  achievementId: AchievementId;
+  requestId: string;
+}
+
+export interface JoinZooEventMessage {
+  type: 'join_zoo_event';
+  eventId: ZooEventId;
+}
+
+export interface LeaveZooEventMessage {
+  type: 'leave_zoo_event';
+  eventId: ZooEventId;
+}
+
+export interface PerformEventActionMessage {
+  type: 'perform_event_action';
+  eventId: ZooEventId;
+}
+
+export interface ClaimEventRewardMessage {
+  type: 'claim_event_reward';
+  eventId: ZooEventId;
+  requestId: string;
+}
+
+export interface ConfigureZooEventsMessage {
+  type: 'configure_zoo_events';
+  seasonalTheme?: SeasonalThemeId;
+  eventPatches?: ZooEventAdminPatch[];
+}
+
+export interface SetSocialPrivacyMessage {
+  type: 'set_social_privacy';
+  allowFriendJoin: boolean;
+}
+
+export interface ConfigureInstanceMessage {
+  type: 'configure_instance';
+  roomId: string;
+  maxPlayers?: number;
+  status?: ZooInstanceHealthStatus;
+}
+
 export interface PingMessage {
   type: 'ping';
   clientTimestamp: number;
@@ -198,6 +305,18 @@ export type ClientMultiplayerMessage =
   | SetPlayerBlockMessage
   | SubmitPlayerReportMessage
   | TriggerAnimalFeedingMessage
+  | PurchaseFoodItemMessage
+  | ConsumeFoodItemMessage
+  | StopConsumingFoodMessage
+  | RecordPassportProgressMessage
+  | ClaimAchievementRewardMessage
+  | JoinZooEventMessage
+  | LeaveZooEventMessage
+  | PerformEventActionMessage
+  | ClaimEventRewardMessage
+  | ConfigureZooEventsMessage
+  | SetSocialPrivacyMessage
+  | ConfigureInstanceMessage
   | PingMessage
   | LeaveInstanceMessage;
 
@@ -221,6 +340,7 @@ export interface SerializedPlayerState {
   discrepancyDistance?: number;
   activeEmote?: ActiveAvatarEmote | null;
   seatedOn?: SeatedAttachmentState | null;
+  activeConsumption?: ActiveFoodConsumption | null;
 }
 
 export interface WelcomeSnapshotMessage {
@@ -240,8 +360,20 @@ export interface WelcomeSnapshotMessage {
   propStates: Record<string, { active: boolean; lastTriggeredAt: number }>;
   seatStates?: Record<string, WorldSeatOccupancyState[]>;
   availableInstances?: ZooInstanceSummary[];
+  placementReason?: InstancePlacementReason;
+  placementNotice?: string;
+  allowFriendJoin?: boolean;
   animals?: AnimalInstanceState[];
   habitatFeedings?: Record<HabitatId, HabitatFeedingState>;
+  diningWallet?: {
+    currencyBalance: number;
+    inventory: FoodInventoryRecord;
+  };
+  passportState?: PlayerPassportState;
+  zooEvents?: {
+    seasonalTheme: SeasonalThemeId;
+    events: LiveZooEventState[];
+  };
 }
 
 export interface PlayerJoinedMessage {
@@ -323,7 +455,15 @@ export interface SocialPresenceUpdateMessage {
   incomingRequests: FriendRequestRecord[];
   outgoingRequests: FriendRequestRecord[];
   blockedPlayerIds?: string[];
+  allowFriendJoin?: boolean;
   availableInstances?: ZooInstanceSummary[];
+  serverTimestamp: number;
+}
+
+export interface InstanceDirectoryUpdateMessage {
+  type: 'instance_directory_update';
+  availableInstances: ZooInstanceSummary[];
+  notice?: string;
   serverTimestamp: number;
 }
 
@@ -341,6 +481,78 @@ export interface AnimalFeedingEventMessage {
   serverTimestamp: number;
 }
 
+export interface FoodPurchaseResultMessage {
+  type: 'food_purchase_result';
+  requestId: string;
+  success: boolean;
+  itemId: FoodItemId;
+  currencyBalance: number;
+  inventory: FoodInventoryRecord;
+  errorCode?: FoodPurchaseErrorCode;
+  message: string;
+  serverTimestamp: number;
+}
+
+export interface FoodConsumeResultMessage {
+  type: 'food_consume_result';
+  success: boolean;
+  itemId: FoodItemId;
+  currencyBalance: number;
+  inventory: FoodInventoryRecord;
+  consumption?: ActiveFoodConsumption;
+  errorCode?: FoodConsumeErrorCode;
+  message: string;
+  serverTimestamp: number;
+}
+
+export interface PlayerConsumptionUpdatedMessage {
+  type: 'player_consumption_updated';
+  roomId: string;
+  sessionId: string;
+  playerId: string;
+  consumption: ActiveFoodConsumption | null;
+  serverTimestamp: number;
+}
+
+export interface AchievementRewardResultMessage {
+  type: 'achievement_reward_result';
+  requestId: string;
+  success: boolean;
+  achievementId: AchievementId;
+  rewardCoinsGranted: number;
+  rewardBadgeGranted?: string;
+  currencyBalance: number;
+  passportState: PlayerPassportState;
+  errorCode?: AchievementRewardErrorCode;
+  message: string;
+  serverTimestamp: number;
+}
+
+export interface ZooEventsSnapshotMessage {
+  type: 'zoo_events_snapshot';
+  roomId: string;
+  seasonalTheme: SeasonalThemeId;
+  events: LiveZooEventState[];
+  notice?: string;
+  errorCode?: EventErrorCode;
+  serverTimestamp: number;
+}
+
+export interface EventRewardResultMessage {
+  type: 'event_reward_result';
+  requestId: string;
+  success: boolean;
+  eventId: ZooEventId;
+  eventInstanceId: string;
+  rewardCoinsGranted: number;
+  stampedZoneId?: PassportZoneId;
+  currencyBalance: number;
+  passportState: PlayerPassportState;
+  errorCode?: EventErrorCode;
+  message: string;
+  serverTimestamp: number;
+}
+
 export interface PongMessage {
   type: 'pong';
   clientTimestamp: number;
@@ -354,13 +566,19 @@ export interface ErrorNoticeMessage {
     | 'STALE_SEQUENCE'
     | 'OUT_OF_BOUNDS_CLAMPED'
     | 'ROOM_FULL'
+    | 'INSTANCE_UNAVAILABLE'
+    | 'FRIEND_JOIN_DISABLED'
     | 'INVALID_IDENTITY_UPDATE'
     | 'CHAT_RATE_LIMITED'
     | 'CHAT_MODERATION_BLOCKED'
     | 'SEAT_OCCUPIED'
     | 'FRIEND_REQUEST_INVALID'
     | 'PLAYER_BLOCKED'
-    | 'ANIMAL_FEEDING_COOLDOWN';
+    | 'ANIMAL_FEEDING_COOLDOWN'
+    | 'EVENT_FULL'
+    | 'EVENT_NOT_ACTIVE'
+    | 'NOT_PARTICIPATING'
+    | 'INVALID_EVENT_CONFIG';
   message: string;
 }
 
@@ -375,8 +593,15 @@ export type ServerMultiplayerMessage =
   | PlayerEmoteTriggeredMessage
   | SeatStateUpdatedMessage
   | SocialPresenceUpdateMessage
+  | InstanceDirectoryUpdateMessage
   | ReportSubmittedAckMessage
   | AnimalFeedingEventMessage
+  | FoodPurchaseResultMessage
+  | FoodConsumeResultMessage
+  | PlayerConsumptionUpdatedMessage
+  | AchievementRewardResultMessage
+  | ZooEventsSnapshotMessage
+  | EventRewardResultMessage
   | PongMessage
   | ErrorNoticeMessage;
 
@@ -457,15 +682,35 @@ export function parseClientMultiplayerMessage(
               .filter((id): id is string => typeof id === 'string' && id.length <= 64)
               .slice(0, 64)
           : undefined;
+        const diningWallet =
+          parsed.diningWallet && typeof parsed.diningWallet === 'object'
+            ? sanitizeDiningWalletSnapshot(parsed.diningWallet)
+            : undefined;
+        const passportState =
+          parsed.passportState && typeof parsed.passportState === 'object'
+            ? sanitizePlayerPassportState(parsed.passportState)
+            : undefined;
+        const preferFriendPlacement =
+          typeof parsed.preferFriendPlacement === 'boolean'
+            ? parsed.preferFriendPlacement
+            : undefined;
+        const allowFriendJoin =
+          typeof parsed.allowFriendJoin === 'boolean'
+            ? parsed.allowFriendJoin
+            : undefined;
         return {
           type: 'join_instance',
           roomId,
           resumeToken,
+          ...(preferFriendPlacement !== undefined ? { preferFriendPlacement } : {}),
+          ...(allowFriendJoin !== undefined ? { allowFriendJoin } : {}),
           ...(playerId !== undefined ? { playerId } : {}),
           ...(displayName !== undefined ? { displayName } : {}),
           ...(avatar !== undefined ? { avatar } : {}),
           ...(friendPlayerIds !== undefined ? { friendPlayerIds } : {}),
-          ...(blockedPlayerIds !== undefined ? { blockedPlayerIds } : {})
+          ...(blockedPlayerIds !== undefined ? { blockedPlayerIds } : {}),
+          ...(diningWallet !== undefined ? { diningWallet } : {}),
+          ...(passportState !== undefined ? { passportState } : {})
         };
       }
 
@@ -725,6 +970,186 @@ export function parseClientMultiplayerMessage(
         return {
           type: 'trigger_animal_feeding',
           habitatId: parsed.habitatId as HabitatId
+        };
+      }
+
+      case 'purchase_food_item': {
+        if (
+          !isValidFoodItemId(parsed.itemId) ||
+          typeof parsed.requestId !== 'string' ||
+          parsed.requestId.trim().length === 0 ||
+          parsed.requestId.length > 96
+        ) {
+          return null;
+        }
+        const stallId =
+          typeof parsed.stallId === 'string' && parsed.stallId.length <= 64
+            ? parsed.stallId
+            : undefined;
+        return {
+          type: 'purchase_food_item',
+          itemId: parsed.itemId,
+          requestId: parsed.requestId.trim(),
+          ...(stallId !== undefined ? { stallId } : {})
+        };
+      }
+
+      case 'consume_food_item': {
+        if (!isValidFoodItemId(parsed.itemId)) {
+          return null;
+        }
+        return {
+          type: 'consume_food_item',
+          itemId: parsed.itemId
+        };
+      }
+
+      case 'stop_consuming_food': {
+        return {
+          type: 'stop_consuming_food'
+        };
+      }
+
+      case 'record_passport_progress': {
+        const zoneId = isValidPassportZoneId(parsed.zoneId)
+          ? parsed.zoneId
+          : undefined;
+        const speciesId =
+          typeof parsed.speciesId === 'string' &&
+          (ANIMAL_SPECIES_IDS as readonly string[]).includes(parsed.speciesId)
+            ? (parsed.speciesId as AnimalSpeciesId)
+            : undefined;
+        const socialAction =
+          typeof parsed.socialAction === 'boolean'
+            ? parsed.socialAction
+            : undefined;
+        const activityCompleted =
+          typeof parsed.activityCompleted === 'boolean'
+            ? parsed.activityCompleted
+            : undefined;
+        return {
+          type: 'record_passport_progress',
+          ...(zoneId !== undefined ? { zoneId } : {}),
+          ...(speciesId !== undefined ? { speciesId } : {}),
+          ...(socialAction !== undefined ? { socialAction } : {}),
+          ...(activityCompleted !== undefined ? { activityCompleted } : {})
+        };
+      }
+
+      case 'claim_achievement_reward': {
+        if (
+          !isValidAchievementId(parsed.achievementId) ||
+          typeof parsed.requestId !== 'string' ||
+          parsed.requestId.trim().length === 0 ||
+          parsed.requestId.length > 96
+        ) {
+          return null;
+        }
+        return {
+          type: 'claim_achievement_reward',
+          achievementId: parsed.achievementId,
+          requestId: parsed.requestId.trim()
+        };
+      }
+
+      case 'join_zoo_event': {
+        if (!isValidZooEventId(parsed.eventId)) {
+          return null;
+        }
+        return {
+          type: 'join_zoo_event',
+          eventId: parsed.eventId
+        };
+      }
+
+      case 'leave_zoo_event': {
+        if (!isValidZooEventId(parsed.eventId)) {
+          return null;
+        }
+        return {
+          type: 'leave_zoo_event',
+          eventId: parsed.eventId
+        };
+      }
+
+      case 'perform_event_action': {
+        if (!isValidZooEventId(parsed.eventId)) {
+          return null;
+        }
+        return {
+          type: 'perform_event_action',
+          eventId: parsed.eventId
+        };
+      }
+
+      case 'claim_event_reward': {
+        if (
+          !isValidZooEventId(parsed.eventId) ||
+          typeof parsed.requestId !== 'string' ||
+          parsed.requestId.trim().length === 0 ||
+          parsed.requestId.length > 96
+        ) {
+          return null;
+        }
+        return {
+          type: 'claim_event_reward',
+          eventId: parsed.eventId,
+          requestId: parsed.requestId.trim()
+        };
+      }
+
+      case 'configure_zoo_events': {
+        const sanitized = sanitizeEventAdministrationConfig(parsed);
+        if (!sanitized.valid) {
+          return null;
+        }
+        return {
+          type: 'configure_zoo_events',
+          ...(sanitized.seasonalTheme !== undefined
+            ? { seasonalTheme: sanitized.seasonalTheme }
+            : {}),
+          ...(sanitized.eventPatches.length > 0
+            ? { eventPatches: sanitized.eventPatches }
+            : {})
+        };
+      }
+
+      case 'set_social_privacy': {
+        if (typeof parsed.allowFriendJoin !== 'boolean') {
+          return null;
+        }
+        return {
+          type: 'set_social_privacy',
+          allowFriendJoin: parsed.allowFriendJoin
+        };
+      }
+
+      case 'configure_instance': {
+        if (
+          typeof parsed.roomId !== 'string' ||
+          !/^[a-zA-Z0-9_-]{1,48}$/.test(parsed.roomId.trim())
+        ) {
+          return null;
+        }
+        const maxPlayers =
+          typeof parsed.maxPlayers === 'number' &&
+          Number.isFinite(parsed.maxPlayers) &&
+          parsed.maxPlayers >= 1 &&
+          parsed.maxPlayers <= 128
+            ? Math.floor(parsed.maxPlayers)
+            : undefined;
+        const status =
+          parsed.status === 'healthy' || parsed.status === 'unhealthy'
+            ? parsed.status
+            : undefined;
+        if (maxPlayers === undefined && status === undefined) {
+          return null;
+        }
+        return {
+          type: 'configure_instance',
+          roomId: parsed.roomId.trim(),
+          ...(maxPlayers !== undefined ? { maxPlayers } : {}),
+          ...(status !== undefined ? { status } : {})
         };
       }
 

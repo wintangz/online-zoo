@@ -1,7 +1,28 @@
+import type {
+  FoodInventoryRecord,
+  FoodItemCategory,
+  FoodItemId,
+  PersistedDiningWallet
+} from './dining';
+import type {
+  AchievementId,
+  PassportZoneId,
+  PlayerPassportState
+} from './passport';
+import type {
+  LiveZooEventState,
+  SeasonalThemeId,
+  ZooEventId
+} from './events';
+
 export type LocomotionState = 'Idle' | 'Walking' | 'Running' | 'Jumping';
 export type InputDeviceMode = 'desktop' | 'touch';
 export type InteractionArchetype = 'info_plaque' | 'world_prop';
-export type WorldPropReaction = 'toggle_lantern' | 'ring_chime' | 'rest_bench';
+export type WorldPropReaction =
+  | 'toggle_lantern'
+  | 'ring_chime'
+  | 'rest_bench'
+  | 'open_food_stall';
 export type SessionPhase = 'loading' | 'ready' | 'playing' | 'paused';
 export type QualityTier = 'auto' | 'low' | 'medium' | 'high';
 
@@ -215,6 +236,7 @@ export interface RemoteVisitorSummary {
   locomotionState: LocomotionState;
   activeEmote?: ActiveAvatarEmote | null;
   seatedOn?: SeatedAttachmentState | null;
+  activeConsumption?: ActiveFoodConsumption | null;
 }
 
 export interface MultiplayerSessionUIState {
@@ -257,6 +279,9 @@ export interface PlayerSessionRecord {
   transform: AuthoritativePlayerTransform;
   activeEmote?: ActiveAvatarEmote | null;
   seatedOn?: SeatedAttachmentState | null;
+  currencyBalance?: number;
+  foodInventory?: FoodInventoryRecord;
+  activeConsumption?: ActiveFoodConsumption | null;
 }
 
 export interface ResumableSessionEntry {
@@ -273,9 +298,18 @@ export interface SharedPropAuthorityState {
   lastTriggeredAt: number;
 }
 
+export type ZooInstanceHealthStatus = 'healthy' | 'unhealthy';
+
+export type InstancePlacementReason =
+  | 'requested'
+  | 'friend_priority'
+  | 'overflow_redirect'
+  | 'failover_recovery';
+
 export interface ZooInstanceRoom {
   roomId: string;
   maxPlayers: number;
+  status?: ZooInstanceHealthStatus;
   nextVisitorNumber: number;
   activeSessions: Map<string, PlayerSessionRecord>;
   resumableSessions: Map<string, ResumableSessionEntry>;
@@ -377,6 +411,8 @@ export interface FriendStatusEntry {
   roomVisitorCount: number;
   roomMaxPlayers: number;
   canJoin: boolean;
+  allowFriendJoin?: boolean;
+  roomStatus?: ZooInstanceHealthStatus;
 }
 
 export interface ZooInstanceSummary {
@@ -385,6 +421,9 @@ export interface ZooInstanceSummary {
   visitorCount: number;
   maxPlayers: number;
   isFull: boolean;
+  status?: ZooInstanceHealthStatus;
+  friendCount?: number;
+  isOverflow?: boolean;
 }
 
 export type ReportReason =
@@ -418,6 +457,7 @@ export interface PersistedSocialProfile {
   friends: Record<string, { playerId: string; displayName: string; addedAt: number }>;
   mutedPlayerIds: string[];
   blockedPlayerIds: string[];
+  allowFriendJoin?: boolean;
 }
 
 export interface SocialStoreSlice {
@@ -434,6 +474,7 @@ export interface SocialStoreSlice {
   localSeatedState: SeatedAttachmentState | null;
   isSocialDrawerOpen: boolean;
   availableInstances: ZooInstanceSummary[];
+  allowFriendJoin: boolean;
   friends: FriendStatusEntry[];
   incomingRequests: FriendRequestRecord[];
   outgoingRequests: FriendRequestRecord[];
@@ -479,5 +520,113 @@ export interface LocalReconciliationState {
   reconciliationCount: number;
   lastSnapAt: number;
 }
+
+// ============================================================================
+// Feature 006: Food & Dining Types
+// ============================================================================
+
+export interface ActiveFoodConsumption {
+  itemId: FoodItemId;
+  label: string;
+  category: FoodItemCategory;
+  icon: string;
+  startedAt: number;
+  expiresAt: number;
+}
+
+export type FoodPurchaseErrorCode =
+  | 'INVALID_ITEM'
+  | 'INSUFFICIENT_FUNDS'
+  | 'INVENTORY_FULL';
+
+export type FoodConsumeErrorCode =
+  | 'INVALID_ITEM'
+  | 'ITEM_NOT_OWNED';
+
+export interface DiningStoreSlice {
+  wallet: PersistedDiningWallet;
+  activeStallId: string | null;
+  isInventoryOpen: boolean;
+  localActiveConsumption: ActiveFoodConsumption | null;
+  remoteActiveConsumptions: Record<string, ActiveFoodConsumption>;
+  purchaseFeedback: {
+    type: 'success' | 'error';
+    message: string;
+    code?: FoodPurchaseErrorCode | FoodConsumeErrorCode;
+    timestamp: number;
+  } | null;
+}
+
+// ============================================================================
+// Feature 007: Zoo Passport & Progression Types
+// ============================================================================
+
+export type PassportTabId = 'stamps' | 'encyclopedia' | 'achievements';
+
+export type AchievementRewardErrorCode =
+  | 'INVALID_ACHIEVEMENT'
+  | 'ACHIEVEMENT_LOCKED'
+  | 'ALREADY_CLAIMED';
+
+export interface PassportToastNotification {
+  id: string;
+  kind: 'stamp' | 'achievement' | 'reward';
+  title: string;
+  subtitle: string;
+  icon: string;
+  zoneId?: PassportZoneId;
+  achievementId?: AchievementId;
+  createdAt: number;
+}
+
+export interface PassportStoreSlice {
+  state: PlayerPassportState;
+  isPassportOpen: boolean;
+  activeTab: PassportTabId;
+  activeToast: PassportToastNotification | null;
+  rewardFeedback: {
+    type: 'success' | 'error';
+    message: string;
+    code?: AchievementRewardErrorCode;
+    timestamp: number;
+  } | null;
+}
+
+// ============================================================================
+// Feature 008: Events & Activities Types
+// ============================================================================
+
+export type EventErrorCode =
+  | 'INVALID_EVENT'
+  | 'EVENT_NOT_ACTIVE'
+  | 'EVENT_FULL'
+  | 'NOT_PARTICIPATING'
+  | 'REWARD_NOT_ELIGIBLE'
+  | 'ALREADY_CLAIMED'
+  | 'INVALID_EVENT_CONFIG';
+
+export interface EventToastNotification {
+  id: string;
+  eventId?: ZooEventId;
+  title: string;
+  subtitle: string;
+  icon: string;
+  createdAt: number;
+}
+
+export interface EventsStoreSlice {
+  seasonalTheme: SeasonalThemeId;
+  events: LiveZooEventState[];
+  isEventsModalOpen: boolean;
+  activeEventToast: EventToastNotification | null;
+  eventFeedback: {
+    type: 'success' | 'error';
+    message: string;
+    code?: EventErrorCode;
+    timestamp: number;
+  } | null;
+}
+
+
 
 

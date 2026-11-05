@@ -150,6 +150,50 @@ export const SocialInteractionOverlay: React.FC = () => {
     mp?.joinFriendInstance(friendPlayerId);
   };
 
+  const handleToggleAllowFriendJoin = () => {
+    const nextAllow = !social.allowFriendJoin;
+    const mp = getRuntimeMultiplayerClient();
+    if (mp) {
+      mp.setSocialPrivacy(nextAllow);
+    } else {
+      gameStore.getState().setAllowFriendJoin(nextAllow);
+    }
+    setSocialNotice(
+      nextAllow
+        ? 'Friend instance joining enabled.'
+        : 'Friend instance joining disabled (Private).'
+    );
+  };
+
+  const handleConfigureInstanceCapacity = (roomId: string, maxPlayers: number) => {
+    const mp = getRuntimeMultiplayerClient();
+    if (mp) {
+      mp.configureInstance({ roomId, maxPlayers });
+    } else {
+      const next = social.availableInstances.map((inst) =>
+        inst.roomId === roomId
+          ? { ...inst, maxPlayers, isFull: inst.visitorCount >= maxPlayers }
+          : inst
+      );
+      gameStore.getState().setAvailableInstances(next);
+    }
+  };
+
+  const handleToggleInstanceHealth = (
+    roomId: string,
+    status: 'healthy' | 'unhealthy'
+  ) => {
+    const mp = getRuntimeMultiplayerClient();
+    if (mp) {
+      mp.configureInstance({ roomId, status });
+    } else {
+      const next = social.availableInstances.map((inst) =>
+        inst.roomId === roomId ? { ...inst, status } : inst
+      );
+      gameStore.getState().setAvailableInstances(next);
+    }
+  };
+
   const handleToggleBlock = (targetPlayerId: string) => {
     const isBlocked = social.blockedPlayerIds.includes(targetPlayerId);
     const mp = getRuntimeMultiplayerClient();
@@ -321,6 +365,24 @@ export const SocialInteractionOverlay: React.FC = () => {
         </div>
       </div>
 
+      {/* Floating Instance Placement / Recovery Notice when Social Drawer is closed */}
+      {social.socialNotice && !social.isSocialDrawerOpen && (
+        <div
+          data-testid="social-feedback-banner"
+          data-ui-interactive="true"
+          className="pointer-events-auto fixed right-4 top-20 z-30 flex max-w-sm items-center justify-between gap-2 rounded-2xl border border-amber-300/45 bg-emerald-950/95 px-3.5 py-2.5 text-center text-xs font-semibold text-amber-100 shadow-xl backdrop-blur-md sm:right-6"
+        >
+          <span className="flex-1">{social.socialNotice}</span>
+          <button
+            type="button"
+            onClick={() => setSocialNotice(null)}
+            className="text-[10px] font-bold uppercase text-amber-200 underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Right-Side Friends, Nearby Visitors & Safety Drawer (FR-017 - FR-024) */}
       {social.isSocialDrawerOpen && (
         <div
@@ -404,6 +466,32 @@ export const SocialInteractionOverlay: React.FC = () => {
                 Tune ID
               </button>
             </form>
+
+            {/* Friend Instance Privacy Setting (FR-006, SC-002) */}
+            <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+              <div className="min-w-0 flex-1">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                  Friend Instance Joining
+                </span>
+                <span className="text-[11px] text-emerald-100/80">
+                  {social.allowFriendJoin
+                    ? 'Friends can join your instance directly'
+                    : 'Private (Friends cannot join your instance)'}
+                </span>
+              </div>
+              <button
+                type="button"
+                data-testid="toggle-allow-friend-join-btn"
+                onClick={handleToggleAllowFriendJoin}
+                className={`inline-flex shrink-0 items-center justify-center rounded-lg px-2.5 py-1 text-center text-[11px] font-bold leading-none transition ${
+                  social.allowFriendJoin
+                    ? 'bg-emerald-400 text-emerald-950 hover:bg-emerald-300'
+                    : 'bg-rose-500/35 text-rose-100 hover:bg-rose-500/50'
+                }`}
+              >
+                {social.allowFriendJoin ? 'Allowed' : 'Private'}
+              </button>
+            </div>
           </div>
 
           {social.socialNotice && (
@@ -431,7 +519,7 @@ export const SocialInteractionOverlay: React.FC = () => {
             </div>
           )}
 
-          {/* 0. Instance (Server) Selection Directory (FR-025, FR-026, SC-009) */}
+          {/* 0. Instance (Server) Selection Directory (FR-001 - FR-012, SC-001 - SC-005) */}
           <div data-testid="instance-selector-section" className="flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
               Zoo Instances / Servers ({social.availableInstances.length})
@@ -439,6 +527,9 @@ export const SocialInteractionOverlay: React.FC = () => {
             <div className="flex flex-col gap-1.5">
               {social.availableInstances.map((inst) => {
                 const isCurrent = inst.roomId === multiplayer.roomId;
+                const status = inst.status ?? 'healthy';
+                const isUnhealthy = status === 'unhealthy';
+                const friendCount = inst.friendCount ?? 0;
                 const liveCount = isCurrent
                   ? Math.max(inst.visitorCount, multiplayer.visitorCount)
                   : inst.visitorCount;
@@ -447,36 +538,109 @@ export const SocialInteractionOverlay: React.FC = () => {
                   <div
                     key={inst.roomId}
                     data-testid={`instance-option-${inst.roomId}`}
-                    className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 ${
-                      isCurrent
-                        ? 'border-emerald-400/60 bg-emerald-500/20'
-                        : 'border-white/15 bg-white/5'
+                    className={`flex flex-col gap-1.5 rounded-xl border px-2.5 py-2 ${
+                      isUnhealthy
+                        ? 'border-rose-400/50 bg-rose-950/35'
+                        : isCurrent
+                          ? 'border-emerald-400/60 bg-emerald-500/20'
+                          : 'border-white/15 bg-white/5'
                     }`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-white">{inst.label}</p>
-                      <p className="text-[10px] text-emerald-200/80">
-                        <code className="font-mono text-amber-200">{inst.roomId}</code> •{' '}
-                        <span data-testid={`instance-pop-${inst.roomId}`}>
-                          {liveCount}/{inst.maxPlayers} visitors
-                        </span>
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid={`switch-instance-btn-${inst.roomId}`}
-                      disabled={isCurrent || isFull}
-                      onClick={() => handleSwitchInstance(inst.roomId)}
-                      className={`inline-flex shrink-0 items-center justify-center rounded-lg px-2.5 py-1 text-center text-[11px] font-bold leading-none transition ${
-                        isCurrent
-                          ? 'bg-emerald-400/30 text-emerald-100 cursor-default'
-                          : isFull
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-xs font-bold text-white">{inst.label}</p>
+                          <span
+                            data-testid={`instance-status-badge-${inst.roomId}`}
+                            className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none ${
+                              isUnhealthy
+                                ? 'bg-rose-500/35 text-rose-200'
+                                : 'bg-emerald-500/25 text-emerald-200'
+                            }`}
+                          >
+                            {isUnhealthy ? 'Unavailable' : 'Healthy'}
+                          </span>
+                          {friendCount > 0 && (
+                            <span
+                              data-testid={`instance-friends-badge-${inst.roomId}`}
+                              className="inline-flex items-center justify-center rounded-full bg-sky-400/25 px-1.5 py-0.5 text-[9px] font-bold leading-none text-sky-200"
+                            >
+                              👥 {friendCount} {friendCount === 1 ? 'Friend' : 'Friends'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-emerald-200/80">
+                          <code className="font-mono text-amber-200">{inst.roomId}</code> •{' '}
+                          <span data-testid={`instance-pop-${inst.roomId}`}>
+                            {liveCount}/{inst.maxPlayers} visitors
+                          </span>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`switch-instance-btn-${inst.roomId}`}
+                        disabled={isCurrent || isFull || isUnhealthy}
+                        onClick={() => handleSwitchInstance(inst.roomId)}
+                        className={`inline-flex shrink-0 items-center justify-center rounded-lg px-2.5 py-1 text-center text-[11px] font-bold leading-none transition ${
+                          isUnhealthy
                             ? 'bg-rose-500/30 text-rose-200 cursor-not-allowed'
-                            : 'bg-sky-400 text-sky-950 hover:bg-sky-300 active:scale-95'
-                      }`}
-                    >
-                      {isCurrent ? 'Current' : isFull ? 'Full' : 'Switch'}
-                    </button>
+                            : isCurrent
+                              ? 'bg-emerald-400/30 text-emerald-100 cursor-default'
+                              : isFull
+                                ? 'bg-rose-500/30 text-rose-200 cursor-not-allowed'
+                                : 'bg-sky-400 text-sky-950 hover:bg-sky-300 active:scale-95'
+                        }`}
+                      >
+                        {isUnhealthy
+                          ? 'Unavailable'
+                          : isCurrent
+                            ? 'Current'
+                            : isFull
+                              ? 'Full'
+                              : 'Switch'}
+                      </button>
+                    </div>
+
+                    {/* Runtime Instance Capacity & Health Controls (FR-002, FR-011, SC-001, SC-005) */}
+                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-1.5 text-[10px]">
+                      <label className="flex items-center gap-1 text-emerald-200/85">
+                        <span>Cap:</span>
+                        <select
+                          data-testid={`instance-capacity-select-${inst.roomId}`}
+                          value={inst.maxPlayers}
+                          onChange={(e) =>
+                            handleConfigureInstanceCapacity(
+                              inst.roomId,
+                              Number(e.target.value)
+                            )
+                          }
+                          className="rounded border border-white/20 bg-black/45 px-1.5 py-0.5 text-[10px] font-bold text-white focus:border-emerald-400 focus:outline-none"
+                        >
+                          {[1, 2, 4, 8, 16, 24, 32].map((cap) => (
+                            <option key={cap} value={cap}>
+                              {cap} max
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        data-testid={`instance-health-toggle-btn-${inst.roomId}`}
+                        onClick={() =>
+                          handleToggleInstanceHealth(
+                            inst.roomId,
+                            isUnhealthy ? 'healthy' : 'unhealthy'
+                          )
+                        }
+                        className={`inline-flex items-center justify-center rounded px-2 py-0.5 text-center text-[10px] font-bold leading-none transition ${
+                          isUnhealthy
+                            ? 'bg-emerald-400 text-emerald-950 hover:bg-emerald-300'
+                            : 'bg-white/10 text-rose-200 hover:bg-rose-500/30'
+                        }`}
+                      >
+                        {isUnhealthy ? 'Restore Healthy' : 'Simulate Outage'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -703,7 +867,7 @@ export const SocialInteractionOverlay: React.FC = () => {
                         />
                         <span>
                           {friend.online
-                            ? `Online • ${friend.roomId} (${friend.roomVisitorCount}/${friend.roomMaxPlayers})`
+                            ? `Online • ${friend.roomId} (${friend.roomVisitorCount}/${friend.roomMaxPlayers})${friend.allowFriendJoin === false ? ' • Private' : ''}`
                             : 'Offline'}
                         </span>
                       </span>

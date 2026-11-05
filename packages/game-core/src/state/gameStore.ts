@@ -1,8 +1,16 @@
 import { createStore } from 'zustand/vanilla';
 import type {
+  AchievementRewardErrorCode,
   ActiveAvatarEmote,
+  ActiveFoodConsumption,
   AvatarAppearance,
+  DiningStoreSlice,
+  EventErrorCode,
+  EventsStoreSlice,
+  EventToastNotification,
   FollowCameraState,
+  FoodConsumeErrorCode,
+  FoodPurchaseErrorCode,
   FriendRequestRecord,
   FriendStatusEntry,
   InputDeviceMode,
@@ -10,6 +18,9 @@ import type {
   LocalReconciliationState,
   LocomotionState,
   MultiplayerSessionUIState,
+  PassportStoreSlice,
+  PassportTabId,
+  PassportToastNotification,
   PersistedSocialProfile,
   PlayerAvatarState,
   PlayerIdentityProfile,
@@ -65,6 +76,45 @@ import {
   type HabitatId,
   type PlayerEncyclopediaState
 } from '../animals';
+import {
+  clampCurrencyBalance,
+  createDefaultDiningWallet,
+  FOOD_CATALOG_BY_ID,
+  isValidFoodItemId,
+  loadPersistedDiningWallet,
+  MAX_FOOD_ITEM_QUANTITY,
+  sanitizeFoodInventory,
+  savePersistedDiningWallet,
+  type FoodInventoryRecord,
+  type FoodItemId
+} from '../dining';
+import {
+  ACHIEVEMENTS_BY_ID,
+  countDiscoveredSpecies,
+  createDefaultPassportState,
+  evaluatePassportAchievements,
+  evaluateProximityZoneStamp,
+  isValidAchievementId,
+  loadPlayerPassportState,
+  PASSPORT_ZONES_BY_ID,
+  recordPassportActivityCompletion,
+  recordPassportSocialInteraction,
+  recordPassportZoneStamp,
+  sanitizePlayerPassportState,
+  savePlayerPassportState,
+  type AchievementId,
+  type PassportZoneId,
+  type PlayerPassportState
+} from '../passport';
+import {
+  createDefaultEventsList,
+  RoomEventsEngine,
+  ZOO_EVENTS_BY_ID,
+  type LiveZooEventState,
+  type SeasonalThemeId,
+  type ZooEventId,
+  type ZooEventScheduleConfig
+} from '../events';
 
 export interface AnimalStoreSlice {
   animals: AnimalInstanceState[];
@@ -274,13 +324,17 @@ export function createInitialSocialSlice(): SocialStoreSlice {
       label: inst.label,
       visitorCount: inst.roomId === DEFAULT_ROOM_ID ? 1 : 0,
       maxPlayers: DEFAULT_MAX_PLAYERS_PER_ROOM,
-      isFull: false
+      isFull: false,
+      status: 'healthy',
+      friendCount: 0,
+      isOverflow: false
     })),
     friends: [],
     incomingRequests: [],
     outgoingRequests: [],
     mutedPlayerIds: [],
     blockedPlayerIds: [],
+    allowFriendJoin: true,
     reportModalTarget: null,
     submittedReports: [],
     reportConfirmationMessage: null,
@@ -298,6 +352,48 @@ export function createInitialAnimalSlice(): AnimalStoreSlice {
     discoveryToast: null,
     feedingNotice: null
   };
+}
+
+export function createInitialDiningSlice(): DiningStoreSlice {
+  return {
+    wallet: createDefaultDiningWallet(),
+    activeStallId: null,
+    isInventoryOpen: false,
+    localActiveConsumption: null,
+    remoteActiveConsumptions: {},
+    purchaseFeedback: null
+  };
+}
+
+export function createInitialPassportSlice(): PassportStoreSlice {
+  return {
+    state: createDefaultPassportState(),
+    isPassportOpen: false,
+    activeTab: 'stamps',
+    activeToast: null,
+    rewardFeedback: null
+  };
+}
+
+let offlineEventsEngine = new RoomEventsEngine();
+
+export function createInitialEventsSlice(): EventsStoreSlice {
+  return {
+    seasonalTheme: 'spring-blossom',
+    events: createDefaultEventsList(Date.now(), 'spring-blossom'),
+    isEventsModalOpen: false,
+    activeEventToast: null,
+    eventFeedback: null
+  };
+}
+
+function areConsumptionsEqual(
+  a?: ActiveFoodConsumption | null,
+  b?: ActiveFoodConsumption | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.itemId === b.itemId && a.startedAt === b.startedAt;
 }
 
 function areAvatarsEqual(a?: AvatarAppearance, b?: AvatarAppearance): boolean {
@@ -328,7 +424,8 @@ function persistSocialSliceToStorage(
   playerId: string,
   friends: FriendStatusEntry[],
   mutedPlayerIds: string[],
-  blockedPlayerIds: string[]
+  blockedPlayerIds: string[],
+  allowFriendJoin?: boolean
 ): void {
   const existing = loadPersistedSocialState(playerId);
   const friendsRecord: PersistedSocialProfile['friends'] = {};
@@ -344,7 +441,11 @@ function persistSocialSliceToStorage(
       schemaVersion: 1,
       friends: friendsRecord,
       mutedPlayerIds,
-      blockedPlayerIds
+      blockedPlayerIds,
+      allowFriendJoin:
+        typeof allowFriendJoin === 'boolean'
+          ? allowFriendJoin
+          : (existing.allowFriendJoin ?? true)
     },
     playerId
   );
@@ -365,6 +466,9 @@ export interface GameUIStoreState {
   identity: PlayerIdentityStoreSlice;
   social: SocialStoreSlice;
   animalSim: AnimalStoreSlice;
+  dining: DiningStoreSlice;
+  passport: PassportStoreSlice;
+  events: EventsStoreSlice;
 
   setPhase: (phase: SessionPhase) => void;
   setLoadingProgress: (progress: number) => void;
@@ -432,7 +536,9 @@ export interface GameUIStoreState {
     outgoingRequests: FriendRequestRecord[];
     blockedPlayerIds?: string[];
     availableInstances?: ZooInstanceSummary[];
+    allowFriendJoin?: boolean;
   }) => void;
+  setAllowFriendJoin: (allowFriendJoin: boolean) => void;
   toggleMutePlayer: (targetPlayerId: string) => boolean;
   setBlockPlayer: (targetPlayerId: string, blocked: boolean) => void;
   openReportModal: (target: {
@@ -454,6 +560,115 @@ export interface GameUIStoreState {
   clearDiscoveryToast: () => void;
   setFeedingNotice: (notice: string | null) => void;
   stepLocalAnimalSimulation: (dtSeconds: number, now?: number) => void;
+  openFoodStall: (stallId: string) => void;
+  closeFoodStall: () => void;
+  setInventoryOpen: (isOpen: boolean) => void;
+  applyDiningWalletUpdate: (
+    currencyBalance: number,
+    inventory: FoodInventoryRecord
+  ) => void;
+  setPurchaseFeedback: (
+    feedback: {
+      type: 'success' | 'error';
+      message: string;
+      code?: FoodPurchaseErrorCode | FoodConsumeErrorCode;
+      timestamp?: number;
+    } | null
+  ) => void;
+  setLocalActiveConsumption: (consumption: ActiveFoodConsumption | null) => void;
+  setRemoteActiveConsumption: (
+    sessionId: string,
+    playerId: string | undefined,
+    consumption: ActiveFoodConsumption | null
+  ) => void;
+  purchaseFoodItemOffline: (itemId: FoodItemId) => {
+    ok: boolean;
+    errorCode?: FoodPurchaseErrorCode;
+    message: string;
+  };
+  consumeFoodItemOffline: (
+    itemId: FoodItemId,
+    now?: number
+  ) => {
+    ok: boolean;
+    errorCode?: FoodConsumeErrorCode;
+    message: string;
+  };
+  setPassportOpen: (isOpen: boolean, tab?: PassportTabId) => void;
+  setPassportTab: (tab: PassportTabId) => void;
+  recordZoneVisit: (zoneId: PassportZoneId) => {
+    newlyStamped: boolean;
+    newlyUnlockedAchievementIds: AchievementId[];
+  };
+  evaluateProximityPassportZones: (
+    playerPosition: [number, number, number]
+  ) => {
+    newlyStampedZoneIds: PassportZoneId[];
+    newlyUnlockedAchievementIds: AchievementId[];
+  };
+  recordPassportSocialAction: () => AchievementId[];
+  recordPassportActivityCompleted: () => AchievementId[];
+  syncPassportWithEncyclopedia: () => AchievementId[];
+  applyPassportServerUpdate: (passportState: PlayerPassportState) => void;
+  setPassportRewardFeedback: (
+    feedback: {
+      type: 'success' | 'error';
+      message: string;
+      code?: AchievementRewardErrorCode;
+      timestamp?: number;
+    } | null
+  ) => void;
+  claimAchievementRewardOffline: (achievementId: AchievementId) => {
+    ok: boolean;
+    errorCode?: AchievementRewardErrorCode;
+    rewardCoinsGranted: number;
+    message: string;
+  };
+  selectActivePassportBadge: (badge: string | null) => void;
+  dismissPassportToast: () => void;
+  setEventsModalOpen: (isOpen: boolean) => void;
+  applyZooEventsSnapshot: (payload: {
+    seasonalTheme: SeasonalThemeId;
+    events: LiveZooEventState[];
+    notice?: string;
+    errorCode?: EventErrorCode;
+  }) => void;
+  setEventFeedback: (
+    feedback: {
+      type: 'success' | 'error';
+      message: string;
+      code?: EventErrorCode;
+      timestamp?: number;
+    } | null
+  ) => void;
+  dismissEventToast: () => void;
+  joinZooEventOffline: (eventId: ZooEventId) => {
+    ok: boolean;
+    errorCode?: EventErrorCode;
+    message: string;
+  };
+  leaveZooEventOffline: (eventId: ZooEventId) => {
+    ok: boolean;
+    errorCode?: EventErrorCode;
+    message: string;
+  };
+  performEventActionOffline: (eventId: ZooEventId) => {
+    ok: boolean;
+    errorCode?: EventErrorCode;
+    message: string;
+  };
+  claimEventRewardOffline: (eventId: ZooEventId) => {
+    ok: boolean;
+    errorCode?: EventErrorCode;
+    rewardCoinsGranted: number;
+    stampedZoneId?: PassportZoneId;
+    message: string;
+  };
+  configureZooEventsOffline: (config: ZooEventScheduleConfig) => {
+    ok: boolean;
+    errorCode?: EventErrorCode;
+    message: string;
+  };
   updateSettings: (partial: Partial<UserSettings>) => void;
   resetSession: () => void;
 }
@@ -463,7 +678,9 @@ const INITIAL_PROP_STATES: Record<string, { active: boolean; lastTriggeredAt: nu
   'prop-wind-chime': { active: false, lastTriggeredAt: 0 },
   'prop-scenic-bench': { active: false, lastTriggeredAt: 0 },
   'prop-plaza-bench': { active: false, lastTriggeredAt: 0 },
-  'prop-pond-chair': { active: false, lastTriggeredAt: 0 }
+  'prop-pond-chair': { active: false, lastTriggeredAt: 0 },
+  'prop-plaza-cafe-table': { active: false, lastTriggeredAt: 0 },
+  'prop-bamboo-picnic-table': { active: false, lastTriggeredAt: 0 }
 };
 
 export const gameStore = createStore<GameUIStoreState>((set, get) => ({
@@ -481,6 +698,9 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   identity: createInitialIdentitySlice(),
   social: createInitialSocialSlice(),
   animalSim: createInitialAnimalSlice(),
+  dining: createInitialDiningSlice(),
+  passport: createInitialPassportSlice(),
+  events: createInitialEventsSlice(),
 
   setPhase: (phase) =>
     set((state) => ({
@@ -558,12 +778,19 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         visitor.activeEmote !== undefined ? visitor.activeEmote : existing?.activeEmote;
       const mergedSeatedOn =
         visitor.seatedOn !== undefined ? visitor.seatedOn : existing?.seatedOn;
+      const mergedActiveConsumption =
+        visitor.activeConsumption !== undefined
+          ? visitor.activeConsumption
+          : existing?.activeConsumption;
       const mergedVisitor: RemoteVisitorSummary = {
         ...existing,
         ...visitor,
         ...(mergedAvatar !== undefined ? { avatar: mergedAvatar } : {}),
         ...(mergedActiveEmote !== undefined ? { activeEmote: mergedActiveEmote } : {}),
-        ...(mergedSeatedOn !== undefined ? { seatedOn: mergedSeatedOn } : {})
+        ...(mergedSeatedOn !== undefined ? { seatedOn: mergedSeatedOn } : {}),
+        ...(mergedActiveConsumption !== undefined
+          ? { activeConsumption: mergedActiveConsumption }
+          : {})
       };
       if (
         existing &&
@@ -573,7 +800,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         existing.playerId === mergedVisitor.playerId &&
         areAvatarsEqual(existing.avatar, mergedVisitor.avatar) &&
         areEmotesEqual(existing.activeEmote, mergedVisitor.activeEmote) &&
-        areSeatsEqual(existing.seatedOn, mergedVisitor.seatedOn)
+        areSeatsEqual(existing.seatedOn, mergedVisitor.seatedOn) &&
+        areConsumptionsEqual(existing.activeConsumption, mergedVisitor.activeConsumption)
       ) {
         return state;
       }
@@ -598,6 +826,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       delete nextBubbles[sessionId];
       const nextEmotes = { ...state.social.remoteActiveEmotes };
       delete nextEmotes[sessionId];
+      const nextConsumptions = { ...state.dining.remoteActiveConsumptions };
+      delete nextConsumptions[sessionId];
       return {
         multiplayer: {
           ...state.multiplayer,
@@ -607,6 +837,10 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           ...state.social,
           activeSpeechBubbles: nextBubbles,
           remoteActiveEmotes: nextEmotes
+        },
+        dining: {
+          ...state.dining,
+          remoteActiveConsumptions: nextConsumptions
         }
       };
     }),
@@ -622,6 +856,13 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     const persistedSettings = loadPersistedSettings();
     const persistedSocial = loadPersistedSocialState(profile.playerId);
     const persistedEncyclopedia = loadPlayerEncyclopedia();
+    const persistedWallet = loadPersistedDiningWallet();
+    const rawPassport = loadPlayerPassportState();
+    const evaluatedPassport = evaluatePassportAchievements(
+      rawPassport,
+      countDiscoveredSpecies(persistedEncyclopedia)
+    ).state;
+    savePlayerPassportState(evaluatedPassport);
     const outfitColors = getOutfitColors(profile.avatar.outfit);
     const initialFriends: FriendStatusEntry[] = Object.values(persistedSocial.friends).map((f) => ({
       playerId: f.playerId,
@@ -649,11 +890,20 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         ...state.social,
         friends: state.social.friends.length > 0 ? state.social.friends : initialFriends,
         mutedPlayerIds: persistedSocial.mutedPlayerIds,
-        blockedPlayerIds: persistedSocial.blockedPlayerIds
+        blockedPlayerIds: persistedSocial.blockedPlayerIds,
+        allowFriendJoin: persistedSocial.allowFriendJoin ?? true
       },
       animalSim: {
         ...state.animalSim,
         encyclopedia: persistedEncyclopedia
+      },
+      dining: {
+        ...state.dining,
+        wallet: persistedWallet
+      },
+      passport: {
+        ...state.passport,
+        state: evaluatedPassport
       },
       multiplayer: {
         ...state.multiplayer,
@@ -858,7 +1108,11 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       }
     })),
 
-  addProximityChatMessage: (message) =>
+  addProximityChatMessage: (message) => {
+    const isFromSelf =
+      message.senderSessionId === get().multiplayer.localSessionId ||
+      message.senderPlayerId === get().identity.profile.playerId ||
+      message.senderSessionId === 'local-session';
     set((state) => {
       const { mutedPlayerIds, blockedPlayerIds } = state.social;
       if (
@@ -886,7 +1140,11 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           chatFeedback: null
         }
       };
-    }),
+    });
+    if (isFromSelf) {
+      get().recordPassportSocialAction();
+    }
+  },
 
   pruneExpiredSocialEffects: (now = Date.now()) =>
     set((state) => {
@@ -915,6 +1173,21 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         }
       }
 
+      let nextLocalConsumption = state.dining.localActiveConsumption;
+      if (nextLocalConsumption && nextLocalConsumption.expiresAt <= now) {
+        nextLocalConsumption = null;
+        changed = true;
+      }
+
+      const nextRemoteConsumptions: Record<string, ActiveFoodConsumption> = {};
+      for (const [sid, cons] of Object.entries(state.dining.remoteActiveConsumptions)) {
+        if (cons.expiresAt > now) {
+          nextRemoteConsumptions[sid] = cons;
+        } else {
+          changed = true;
+        }
+      }
+
       if (!changed) {
         return state;
       }
@@ -925,6 +1198,11 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           activeSpeechBubbles: nextBubbles,
           localActiveEmote: nextLocalEmote,
           remoteActiveEmotes: nextRemoteEmotes
+        },
+        dining: {
+          ...state.dining,
+          localActiveConsumption: nextLocalConsumption,
+          remoteActiveConsumptions: nextRemoteConsumptions
         }
       };
     }),
@@ -943,7 +1221,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       }
     })),
 
-  setLocalActiveEmote: (emote) =>
+  setLocalActiveEmote: (emote) => {
     set((state) => {
       if (areEmotesEqual(state.social.localActiveEmote, emote)) {
         return state;
@@ -954,7 +1232,11 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           localActiveEmote: emote
         }
       };
-    }),
+    });
+    if (emote) {
+      get().recordPassportSocialAction();
+    }
+  },
 
   setRemoteActiveEmote: (sessionId, playerId, emote) =>
     set((state) => {
@@ -1057,13 +1339,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       };
     }),
 
-  setLocalSeatedState: (localSeatedState) =>
+  setLocalSeatedState: (localSeatedState) => {
     set((state) => ({
       social: {
         ...state.social,
         localSeatedState
       }
-    })),
+    }));
+    if (localSeatedState) {
+      get().recordPassportSocialAction();
+    }
+  },
 
   setSocialDrawerOpen: (isSocialDrawerOpen) =>
     set((state) => ({
@@ -1086,12 +1372,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         (r) => !blockedSet.has(r.toPlayerId)
       );
       const nextBlocked = payload.blockedPlayerIds ?? state.social.blockedPlayerIds;
+      const nextAllowFriendJoin =
+        typeof payload.allowFriendJoin === 'boolean'
+          ? payload.allowFriendJoin
+          : state.social.allowFriendJoin;
 
       persistSocialSliceToStorage(
         state.identity.profile.playerId,
         filteredFriends,
         state.social.mutedPlayerIds,
-        nextBlocked
+        nextBlocked,
+        nextAllowFriendJoin
       );
 
       return {
@@ -1101,9 +1392,27 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           incomingRequests: filteredIncoming,
           outgoingRequests: filteredOutgoing,
           blockedPlayerIds: nextBlocked,
+          allowFriendJoin: nextAllowFriendJoin,
           availableInstances: payload.availableInstances
             ? [...payload.availableInstances]
             : state.social.availableInstances
+        }
+      };
+    }),
+
+  setAllowFriendJoin: (allowFriendJoin) =>
+    set((state) => {
+      persistSocialSliceToStorage(
+        state.identity.profile.playerId,
+        state.social.friends,
+        state.social.mutedPlayerIds,
+        state.social.blockedPlayerIds,
+        allowFriendJoin
+      );
+      return {
+        social: {
+          ...state.social,
+          allowFriendJoin
         }
       };
     }),
@@ -1302,6 +1611,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           : state.animalSim.discoveryToast
       }
     }));
+    get().syncPassportWithEncyclopedia();
   },
 
   setEncyclopediaOpen: (isOpen) =>
@@ -1332,6 +1642,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         }
       }
     }));
+    get().syncPassportWithEncyclopedia();
     return true;
   },
 
@@ -1344,6 +1655,7 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
         encyclopedia: nextEncyclopedia
       }
     }));
+    get().recordPassportActivityCompleted();
   },
 
   clearDiscoveryToast: () =>
@@ -1373,13 +1685,840 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     }));
   },
 
+  openFoodStall: (stallId) =>
+    set((state) => ({
+      isPointerLocked: false,
+      isCursorRevealed: true,
+      dining: {
+        ...state.dining,
+        activeStallId: stallId,
+        purchaseFeedback: null
+      }
+    })),
+
+  closeFoodStall: () =>
+    set((state) => ({
+      isCursorRevealed: false,
+      dining: {
+        ...state.dining,
+        activeStallId: null,
+        purchaseFeedback: null
+      }
+    })),
+
+  setInventoryOpen: (isInventoryOpen) =>
+    set((state) => ({
+      isPointerLocked: isInventoryOpen ? false : state.isPointerLocked,
+      isCursorRevealed: isInventoryOpen ? true : state.isCursorRevealed,
+      dining: {
+        ...state.dining,
+        isInventoryOpen
+      }
+    })),
+
+  applyDiningWalletUpdate: (currencyBalance, inventory) => {
+    const nextWallet = {
+      schemaVersion: 1 as const,
+      currencyBalance: clampCurrencyBalance(currencyBalance),
+      inventory: sanitizeFoodInventory(inventory),
+      updatedAt: new Date().toISOString()
+    };
+    savePersistedDiningWallet(nextWallet);
+    set((state) => ({
+      dining: {
+        ...state.dining,
+        wallet: nextWallet
+      }
+    }));
+  },
+
+  setPurchaseFeedback: (feedback) =>
+    set((state) => ({
+      dining: {
+        ...state.dining,
+        purchaseFeedback: feedback
+          ? {
+              type: feedback.type,
+              message: feedback.message,
+              ...(feedback.code !== undefined ? { code: feedback.code } : {}),
+              timestamp: feedback.timestamp ?? Date.now()
+            }
+          : null
+      }
+    })),
+
+  setLocalActiveConsumption: (consumption) => {
+    set((state) => {
+      if (areConsumptionsEqual(state.dining.localActiveConsumption, consumption)) {
+        return state;
+      }
+      return {
+        dining: {
+          ...state.dining,
+          localActiveConsumption: consumption
+        }
+      };
+    });
+    if (consumption) {
+      get().recordPassportActivityCompleted();
+    }
+  },
+
+  setRemoteActiveConsumption: (sessionId, playerId, consumption) =>
+    set((state) => {
+      const { mutedPlayerIds, blockedPlayerIds } = state.social;
+      const isSuppressed =
+        (playerId && (mutedPlayerIds.includes(playerId) || blockedPlayerIds.includes(playerId))) ||
+        mutedPlayerIds.includes(sessionId) ||
+        blockedPlayerIds.includes(sessionId);
+
+      const effectiveConsumption = isSuppressed ? null : consumption;
+      const nextRemoteConsumptions = { ...state.dining.remoteActiveConsumptions };
+      if (effectiveConsumption) {
+        nextRemoteConsumptions[sessionId] = effectiveConsumption;
+      } else {
+        delete nextRemoteConsumptions[sessionId];
+      }
+
+      const existingVisitor = state.multiplayer.remoteVisitors[sessionId];
+      return {
+        dining: {
+          ...state.dining,
+          remoteActiveConsumptions: nextRemoteConsumptions
+        },
+        multiplayer: existingVisitor
+          ? {
+              ...state.multiplayer,
+              remoteVisitors: {
+                ...state.multiplayer.remoteVisitors,
+                [sessionId]: {
+                  ...existingVisitor,
+                  activeConsumption: effectiveConsumption
+                }
+              }
+            }
+          : state.multiplayer
+      };
+    }),
+
+  purchaseFoodItemOffline: (itemId) => {
+    if (!isValidFoodItemId(itemId)) {
+      const msg = 'Selected food item is not available.';
+      get().setPurchaseFeedback({
+        type: 'error',
+        message: msg,
+        code: 'INVALID_ITEM'
+      });
+      return { ok: false, errorCode: 'INVALID_ITEM', message: msg };
+    }
+
+    const item = FOOD_CATALOG_BY_ID[itemId];
+    const wallet = get().dining.wallet;
+    if (wallet.currencyBalance < item.price) {
+      const msg = `Not enough Zoo Coins for ${item.name} (costs ${item.price}, you have ${wallet.currencyBalance}).`;
+      get().setPurchaseFeedback({
+        type: 'error',
+        message: msg,
+        code: 'INSUFFICIENT_FUNDS'
+      });
+      return { ok: false, errorCode: 'INSUFFICIENT_FUNDS', message: msg };
+    }
+
+    const currentQty = wallet.inventory[itemId] ?? 0;
+    if (currentQty >= MAX_FOOD_ITEM_QUANTITY) {
+      const msg = `Your bag is full of ${item.name}!`;
+      get().setPurchaseFeedback({
+        type: 'error',
+        message: msg,
+        code: 'INVENTORY_FULL'
+      });
+      return { ok: false, errorCode: 'INVENTORY_FULL', message: msg };
+    }
+
+    const nextBalance = wallet.currencyBalance - item.price;
+    const nextInventory: FoodInventoryRecord = {
+      ...wallet.inventory,
+      [itemId]: currentQty + 1
+    };
+    get().applyDiningWalletUpdate(nextBalance, nextInventory);
+    const msg = `Purchased ${item.name} (-${item.price} Zoo Coins)!`;
+    get().setPurchaseFeedback({
+      type: 'success',
+      message: msg
+    });
+    return { ok: true, message: msg };
+  },
+
+  consumeFoodItemOffline: (itemId, now = Date.now()) => {
+    if (!isValidFoodItemId(itemId)) {
+      return {
+        ok: false,
+        errorCode: 'INVALID_ITEM',
+        message: 'Invalid food item.'
+      };
+    }
+
+    const item = FOOD_CATALOG_BY_ID[itemId];
+    const wallet = get().dining.wallet;
+    const currentQty = wallet.inventory[itemId] ?? 0;
+    if (currentQty <= 0) {
+      const msg = `You do not own any ${item.name} in your bag.`;
+      get().setPurchaseFeedback({
+        type: 'error',
+        message: msg,
+        code: 'ITEM_NOT_OWNED'
+      });
+      return { ok: false, errorCode: 'ITEM_NOT_OWNED', message: msg };
+    }
+
+    const nextInventory: FoodInventoryRecord = {
+      ...wallet.inventory,
+      [itemId]: currentQty - 1
+    };
+    get().applyDiningWalletUpdate(wallet.currencyBalance, nextInventory);
+    const consumption: ActiveFoodConsumption = {
+      itemId,
+      label: item.name,
+      category: item.category,
+      icon: item.icon,
+      startedAt: now,
+      expiresAt: now + item.durationMs
+    };
+    get().setLocalActiveConsumption(consumption);
+    const msg = `${item.gerundLabel} ${item.name}!`;
+    get().setPurchaseFeedback({
+      type: 'success',
+      message: msg
+    });
+    return { ok: true, message: msg };
+  },
+
+  setPassportOpen: (isPassportOpen, tab) =>
+    set((state) => ({
+      isPointerLocked: isPassportOpen ? false : state.isPointerLocked,
+      isCursorRevealed: isPassportOpen ? true : false,
+      passport: {
+        ...state.passport,
+        isPassportOpen,
+        ...(tab !== undefined ? { activeTab: tab } : {}),
+        rewardFeedback: null
+      }
+    })),
+
+  setPassportTab: (activeTab) =>
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        activeTab,
+        rewardFeedback: null
+      }
+    })),
+
+  recordZoneVisit: (zoneId) => {
+    const curState = get();
+    const discoveredSpeciesCount = countDiscoveredSpecies(
+      curState.animalSim.encyclopedia
+    );
+    const res = recordPassportZoneStamp(
+      curState.passport.state,
+      zoneId,
+      discoveredSpeciesCount
+    );
+    if (!res.newlyStamped && res.newlyUnlockedAchievementIds.length === 0) {
+      return res;
+    }
+
+    const zoneDesc = PASSPORT_ZONES_BY_ID[zoneId];
+    const toast: PassportToastNotification = res.newlyStamped
+      ? {
+          id: `toast_stamp_${zoneId}_${Date.now()}`,
+          kind: 'stamp',
+          title: `Passport Stamp Collected: ${zoneDesc.name}`,
+          subtitle: zoneDesc.stampLabel,
+          icon: zoneDesc.stampIcon,
+          zoneId,
+          createdAt: Date.now()
+        }
+      : {
+          id: `toast_ach_${res.newlyUnlockedAchievementIds[0]!}_${Date.now()}`,
+          kind: 'achievement',
+          title: `Achievement Unlocked: ${ACHIEVEMENTS_BY_ID[res.newlyUnlockedAchievementIds[0]!].title}`,
+          subtitle: `Claim +${ACHIEVEMENTS_BY_ID[res.newlyUnlockedAchievementIds[0]!].rewardCoins} Zoo Coins in your Passport!`,
+          icon: ACHIEVEMENTS_BY_ID[res.newlyUnlockedAchievementIds[0]!].icon,
+          achievementId: res.newlyUnlockedAchievementIds[0]!,
+          createdAt: Date.now()
+        };
+
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: res.state,
+        activeToast: toast
+      }
+    }));
+
+    return res;
+  },
+
+  evaluateProximityPassportZones: (playerPosition) => {
+    const curState = get();
+    const discoveredSpeciesCount = countDiscoveredSpecies(
+      curState.animalSim.encyclopedia
+    );
+    const res = evaluateProximityZoneStamp(
+      playerPosition,
+      curState.passport.state,
+      discoveredSpeciesCount
+    );
+    if (
+      res.newlyStampedZoneIds.length === 0 &&
+      res.newlyUnlockedAchievementIds.length === 0
+    ) {
+      return res;
+    }
+
+    let toast: PassportToastNotification | null = curState.passport.activeToast;
+    if (res.newlyStampedZoneIds.length > 0) {
+      const zId = res.newlyStampedZoneIds[0]!;
+      const zoneDesc = PASSPORT_ZONES_BY_ID[zId];
+      toast = {
+        id: `toast_stamp_${zId}_${Date.now()}`,
+        kind: 'stamp',
+        title: `Passport Stamp Collected: ${zoneDesc.name}`,
+        subtitle: zoneDesc.stampLabel,
+        icon: zoneDesc.stampIcon,
+        zoneId: zId,
+        createdAt: Date.now()
+      };
+    } else if (res.newlyUnlockedAchievementIds.length > 0) {
+      const achId = res.newlyUnlockedAchievementIds[0]!;
+      const achDesc = ACHIEVEMENTS_BY_ID[achId];
+      toast = {
+        id: `toast_ach_${achId}_${Date.now()}`,
+        kind: 'achievement',
+        title: `Achievement Unlocked: ${achDesc.title}`,
+        subtitle: `Claim +${achDesc.rewardCoins} Zoo Coins in your Passport!`,
+        icon: achDesc.icon,
+        achievementId: achId,
+        createdAt: Date.now()
+      };
+    }
+
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: res.state,
+        activeToast: toast
+      }
+    }));
+
+    return res;
+  },
+
+  recordPassportSocialAction: () => {
+    const curState = get();
+    const discoveredSpeciesCount = countDiscoveredSpecies(
+      curState.animalSim.encyclopedia
+    );
+    const res = recordPassportSocialInteraction(
+      curState.passport.state,
+      discoveredSpeciesCount
+    );
+    let toast = curState.passport.activeToast;
+    if (res.newlyUnlockedAchievementIds.length > 0) {
+      const achId = res.newlyUnlockedAchievementIds[0]!;
+      const achDesc = ACHIEVEMENTS_BY_ID[achId];
+      toast = {
+        id: `toast_ach_${achId}_${Date.now()}`,
+        kind: 'achievement',
+        title: `Achievement Unlocked: ${achDesc.title}`,
+        subtitle: `Claim +${achDesc.rewardCoins} Zoo Coins in your Passport!`,
+        icon: achDesc.icon,
+        achievementId: achId,
+        createdAt: Date.now()
+      };
+    }
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: res.state,
+        activeToast: toast
+      }
+    }));
+    return res.newlyUnlockedAchievementIds;
+  },
+
+  recordPassportActivityCompleted: () => {
+    const curState = get();
+    const discoveredSpeciesCount = countDiscoveredSpecies(
+      curState.animalSim.encyclopedia
+    );
+    const res = recordPassportActivityCompletion(
+      curState.passport.state,
+      discoveredSpeciesCount
+    );
+    let toast = curState.passport.activeToast;
+    if (res.newlyUnlockedAchievementIds.length > 0) {
+      const achId = res.newlyUnlockedAchievementIds[0]!;
+      const achDesc = ACHIEVEMENTS_BY_ID[achId];
+      toast = {
+        id: `toast_ach_${achId}_${Date.now()}`,
+        kind: 'achievement',
+        title: `Achievement Unlocked: ${achDesc.title}`,
+        subtitle: `Claim +${achDesc.rewardCoins} Zoo Coins in your Passport!`,
+        icon: achDesc.icon,
+        achievementId: achId,
+        createdAt: Date.now()
+      };
+    }
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: res.state,
+        activeToast: toast
+      }
+    }));
+    return res.newlyUnlockedAchievementIds;
+  },
+
+  syncPassportWithEncyclopedia: () => {
+    const curState = get();
+    const discoveredSpeciesCount = countDiscoveredSpecies(
+      curState.animalSim.encyclopedia
+    );
+    const res = evaluatePassportAchievements(
+      curState.passport.state,
+      discoveredSpeciesCount
+    );
+    if (res.newlyUnlockedAchievementIds.length === 0) {
+      return [];
+    }
+    savePlayerPassportState(res.state);
+    const achId = res.newlyUnlockedAchievementIds[0]!;
+    const achDesc = ACHIEVEMENTS_BY_ID[achId];
+    const toast: PassportToastNotification = {
+      id: `toast_ach_${achId}_${Date.now()}`,
+      kind: 'achievement',
+      title: `Achievement Unlocked: ${achDesc.title}`,
+      subtitle: `Claim +${achDesc.rewardCoins} Zoo Coins in your Passport!`,
+      icon: achDesc.icon,
+      achievementId: achId,
+      createdAt: Date.now()
+    };
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: res.state,
+        activeToast: toast
+      }
+    }));
+    return res.newlyUnlockedAchievementIds;
+  },
+
+  applyPassportServerUpdate: (passportState) => {
+    const sanitized = sanitizePlayerPassportState(passportState);
+    savePlayerPassportState(sanitized);
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: sanitized
+      }
+    }));
+  },
+
+  setPassportRewardFeedback: (feedback) =>
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        rewardFeedback: feedback
+          ? {
+              type: feedback.type,
+              message: feedback.message,
+              ...(feedback.code !== undefined ? { code: feedback.code } : {}),
+              timestamp: feedback.timestamp ?? Date.now()
+            }
+          : null
+      }
+    })),
+
+  claimAchievementRewardOffline: (achievementId) => {
+    if (!isValidAchievementId(achievementId)) {
+      const msg = 'Unknown achievement.';
+      get().setPassportRewardFeedback({
+        type: 'error',
+        message: msg,
+        code: 'INVALID_ACHIEVEMENT'
+      });
+      return {
+        ok: false,
+        errorCode: 'INVALID_ACHIEVEMENT',
+        rewardCoinsGranted: 0,
+        message: msg
+      };
+    }
+
+    const curState = get();
+    const rec = curState.passport.state.achievements[achievementId];
+    const desc = ACHIEVEMENTS_BY_ID[achievementId];
+
+    if (!rec.unlocked) {
+      const msg = `${desc.title} is still locked. Complete its goal first!`;
+      get().setPassportRewardFeedback({
+        type: 'error',
+        message: msg,
+        code: 'ACHIEVEMENT_LOCKED'
+      });
+      return {
+        ok: false,
+        errorCode: 'ACHIEVEMENT_LOCKED',
+        rewardCoinsGranted: 0,
+        message: msg
+      };
+    }
+
+    if (rec.claimed) {
+      const msg = `Reward for ${desc.title} has already been claimed.`;
+      get().setPassportRewardFeedback({
+        type: 'error',
+        message: msg,
+        code: 'ALREADY_CLAIMED'
+      });
+      return {
+        ok: false,
+        errorCode: 'ALREADY_CLAIMED',
+        rewardCoinsGranted: 0,
+        message: msg
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const nextBadges = curState.passport.state.earnedBadges.includes(
+      desc.rewardBadge
+    )
+      ? curState.passport.state.earnedBadges
+      : [...curState.passport.state.earnedBadges, desc.rewardBadge];
+
+    const nextPassport: PlayerPassportState = {
+      ...curState.passport.state,
+      achievements: {
+        ...curState.passport.state.achievements,
+        [achievementId]: {
+          ...rec,
+          claimed: true,
+          claimedAt: nowIso
+        }
+      },
+      earnedBadges: nextBadges,
+      activeBadge: curState.passport.state.activeBadge ?? desc.rewardBadge,
+      updatedAt: nowIso
+    };
+    savePlayerPassportState(nextPassport);
+
+    const nextBalance =
+      curState.dining.wallet.currencyBalance + desc.rewardCoins;
+    get().applyDiningWalletUpdate(nextBalance, curState.dining.wallet.inventory);
+
+    const msg = `Claimed +${desc.rewardCoins} Zoo Coins & "${desc.rewardBadge}" Badge!`;
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: nextPassport,
+        rewardFeedback: {
+          type: 'success',
+          message: msg,
+          timestamp: Date.now()
+        }
+      }
+    }));
+
+    return {
+      ok: true,
+      rewardCoinsGranted: desc.rewardCoins,
+      message: msg
+    };
+  },
+
+  selectActivePassportBadge: (badge) => {
+    const curPassport = get().passport.state;
+    if (badge !== null && !curPassport.earnedBadges.includes(badge)) {
+      return;
+    }
+    const nextPassport: PlayerPassportState = {
+      ...curPassport,
+      activeBadge: badge,
+      updatedAt: new Date().toISOString()
+    };
+    savePlayerPassportState(nextPassport);
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        state: nextPassport
+      }
+    }));
+  },
+
+  dismissPassportToast: () =>
+    set((state) => ({
+      passport: {
+        ...state.passport,
+        activeToast: null
+      }
+    })),
+
+  setEventsModalOpen: (isOpen) =>
+    set((state) => ({
+      isPointerLocked: isOpen ? false : state.isPointerLocked,
+      isCursorRevealed: isOpen ? true : false,
+      events: {
+        ...state.events,
+        isEventsModalOpen: isOpen,
+        eventFeedback: null
+      }
+    })),
+
+  applyZooEventsSnapshot: (payload) =>
+    set((state) => {
+      const prevById = new Map(
+        state.events.events.map((ev) => [ev.eventId, ev])
+      );
+      let nextToast = state.events.activeEventToast;
+
+      for (const ev of payload.events) {
+        const prev = prevById.get(ev.eventId);
+        if (prev && prev.status !== 'active' && ev.status === 'active') {
+          const desc = ZOO_EVENTS_BY_ID[ev.eventId];
+          nextToast = {
+            id: `evtoast_${ev.eventId}_${Date.now()}`,
+            eventId: ev.eventId,
+            title: `${desc.title} is Starting Now!`,
+            subtitle: desc.locationLabel,
+            icon: desc.icon,
+            createdAt: Date.now()
+          };
+          break;
+        }
+      }
+
+      const nextFeedback =
+        payload.errorCode !== undefined
+          ? {
+              type: 'error' as const,
+              message: payload.notice ?? 'Unable to complete event action.',
+              code: payload.errorCode,
+              timestamp: Date.now()
+            }
+          : payload.notice
+            ? {
+                type: 'success' as const,
+                message: payload.notice,
+                timestamp: Date.now()
+              }
+            : state.events.eventFeedback;
+
+      return {
+        events: {
+          ...state.events,
+          seasonalTheme: payload.seasonalTheme,
+          events: payload.events.map((ev) => ({
+            ...ev,
+            participantSessionIds: [...ev.participantSessionIds],
+            participantPlayerIds: [...ev.participantPlayerIds],
+            contributedPlayerIds: [...ev.contributedPlayerIds],
+            claimedPlayerIds: [...ev.claimedPlayerIds]
+          })),
+          activeEventToast: nextToast,
+          eventFeedback: nextFeedback
+        }
+      };
+    }),
+
+  setEventFeedback: (feedback) =>
+    set((state) => ({
+      events: {
+        ...state.events,
+        eventFeedback: feedback
+          ? {
+              type: feedback.type,
+              message: feedback.message,
+              ...(feedback.code !== undefined ? { code: feedback.code } : {}),
+              timestamp: feedback.timestamp ?? Date.now()
+            }
+          : null
+      }
+    })),
+
+  dismissEventToast: () =>
+    set((state) => ({
+      events: {
+        ...state.events,
+        activeEventToast: null
+      }
+    })),
+
+  joinZooEventOffline: (eventId) => {
+    const cur = get();
+    const sessionId = cur.multiplayer.localSessionId ?? 'local-session';
+    const playerId = cur.identity.profile.playerId;
+    const res = offlineEventsEngine.joinEvent(sessionId, playerId, eventId);
+    if (!res.ok) {
+      get().setEventFeedback({
+        type: 'error',
+        message: res.message,
+        code: res.code
+      });
+      return {
+        ok: false,
+        errorCode: res.code,
+        message: res.message
+      };
+    }
+
+    get().applyZooEventsSnapshot({
+      seasonalTheme: offlineEventsEngine.getSeasonalTheme(),
+      events: offlineEventsEngine.getEventsSnapshot(),
+      notice: res.notice
+    });
+    return {
+      ok: true,
+      message: res.notice
+    };
+  },
+
+  leaveZooEventOffline: (eventId) => {
+    const cur = get();
+    const sessionId = cur.multiplayer.localSessionId ?? 'local-session';
+    const playerId = cur.identity.profile.playerId;
+    const res = offlineEventsEngine.leaveEvent(sessionId, playerId, eventId);
+    if (!res.ok) {
+      get().setEventFeedback({
+        type: 'error',
+        message: res.message,
+        code: res.code
+      });
+      return {
+        ok: false,
+        errorCode: res.code,
+        message: res.message
+      };
+    }
+
+    get().applyZooEventsSnapshot({
+      seasonalTheme: offlineEventsEngine.getSeasonalTheme(),
+      events: offlineEventsEngine.getEventsSnapshot(),
+      notice: res.notice
+    });
+    return {
+      ok: true,
+      message: res.notice
+    };
+  },
+
+  performEventActionOffline: (eventId) => {
+    const cur = get();
+    const sessionId = cur.multiplayer.localSessionId ?? 'local-session';
+    const playerId = cur.identity.profile.playerId;
+    const res = offlineEventsEngine.performEventAction(
+      sessionId,
+      playerId,
+      eventId
+    );
+    if (!res.ok) {
+      get().setEventFeedback({
+        type: 'error',
+        message: res.message,
+        code: res.code
+      });
+      return {
+        ok: false,
+        errorCode: res.code,
+        message: res.message
+      };
+    }
+
+    get().applyZooEventsSnapshot({
+      seasonalTheme: offlineEventsEngine.getSeasonalTheme(),
+      events: offlineEventsEngine.getEventsSnapshot(),
+      notice: res.notice
+    });
+    return {
+      ok: true,
+      message: res.notice
+    };
+  },
+
+  claimEventRewardOffline: (eventId) => {
+    const cur = get();
+    const playerId = cur.identity.profile.playerId;
+    const res = offlineEventsEngine.markRewardClaimed(playerId, eventId);
+    if (!res.ok) {
+      get().setEventFeedback({
+        type: 'error',
+        message: res.message,
+        code: res.code
+      });
+      return {
+        ok: false,
+        errorCode: res.code,
+        rewardCoinsGranted: 0,
+        message: res.message
+      };
+    }
+
+    const nextBalance = cur.dining.wallet.currencyBalance + res.rewardCoins;
+    get().applyDiningWalletUpdate(nextBalance, cur.dining.wallet.inventory);
+    get().recordZoneVisit(res.zoneId);
+    get().recordPassportActivityCompleted();
+
+    const zoneDesc = PASSPORT_ZONES_BY_ID[res.zoneId];
+    const msg = `Claimed +${res.rewardCoins} Zoo Coins & ${zoneDesc.name} Stamp!`;
+    get().applyZooEventsSnapshot({
+      seasonalTheme: offlineEventsEngine.getSeasonalTheme(),
+      events: offlineEventsEngine.getEventsSnapshot(),
+      notice: msg
+    });
+
+    return {
+      ok: true,
+      rewardCoinsGranted: res.rewardCoins,
+      stampedZoneId: res.zoneId,
+      message: msg
+    };
+  },
+
+  configureZooEventsOffline: (config) => {
+    const res = offlineEventsEngine.applyAdminConfig(config);
+    if (!res.ok) {
+      get().setEventFeedback({
+        type: 'error',
+        message: res.message,
+        code: res.code
+      });
+      return {
+        ok: false,
+        errorCode: res.code,
+        message: res.message
+      };
+    }
+
+    get().applyZooEventsSnapshot({
+      seasonalTheme: res.seasonalTheme,
+      events: res.events,
+      notice: res.notice
+    });
+    return {
+      ok: true,
+      message: res.notice
+    };
+  },
+
   updateSettings: (partial) =>
     set((state) => {
       const merged = sanitizeUserSettings({ ...state.settings, ...partial });
       savePersistedSettings(merged);
       return { settings: merged };
     }),
-  resetSession: () =>
+  resetSession: () => {
+    offlineEventsEngine = new RoomEventsEngine();
     set({
       phase: 'loading',
       loadingProgress: 0,
@@ -1393,6 +2532,10 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       multiplayer: { ...INITIAL_MULTIPLAYER_UI_STATE },
       identity: createInitialIdentitySlice(),
       social: createInitialSocialSlice(),
-      animalSim: createInitialAnimalSlice()
-    })
+      animalSim: createInitialAnimalSlice(),
+      dining: createInitialDiningSlice(),
+      passport: createInitialPassportSlice(),
+      events: createInitialEventsSlice()
+    });
+  }
 }));
