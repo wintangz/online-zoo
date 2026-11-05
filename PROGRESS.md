@@ -90,3 +90,24 @@
   - Logged in `specs/art-style-unification/ASSUMPTIONS.md`: Animal species map to `'animal-<species>'` manifest IDs via `ANIMAL_SPECIES_TO_ASSET_ID`; kiosk/table/lobby structures are registered as `.glb` prop entries (`prop-food-stall`, `prop-cafe-table`, `prop-picnic-table`, `prop-ticket-booth`, `prop-fountain`) while the original 6 manifest IDs and their `boundingRadius` values remain unchanged.
 - **Anything to Review**:
   - None; `apps/server` is completely untouched and all compliance, unit, and E2E tests are green.
+
+
+## `hud-declutter` — `3ee484e`
+
+- **Branch**: `fix/hud-declutter`
+- **Commit Hash**: `3ee484e`
+- **What Changed**:
+  - Updated `packages/game-core/src/state/gameStore.ts` to add `isDevDebugOpen: boolean` (default `false`), `isChatPanelOpen: boolean` (default `false`), `computeIsAnyPanelOpen(state)`, and automatic `isCursorRevealed` synchronization whenever any dock panel or modal opens or closes.
+  - Updated `packages/game-client/src/runtime/GameLoopController.tsx` so camera mouse-look (`lookDeltaX`, `lookDeltaY`, `zoomDelta`) pauses whenever any UI panel is open, and `packages/game-client/src/entities/ZooAnimalsLayer.tsx` so floating 3D animal debug tags are hidden by default and only shown when `isDevDebugOpen` is `true`.
+  - Refactored `packages/ui/src/GameHudOverlay.tsx` so persistent on-screen elements are strictly limited to: (1) Player Name + Avatar Chip (`local-visitor-badge` / `open-avatar-customizer-btn`), (2) Current Zone Name (`hud-zone-badge`), (3) Interact Prompt (when something is interactable), (4) Proximity Chat Bubbles (in-world `<Html>`), and (5) ONE compact dock row (`hud-action-dock`) containing Chat & Emotes (`hud-chat-panel-btn`), Social & Friends (`toggle-social-drawer-btn`), Passport (`hud-passport-btn`), Encyclopedia (`animal-encyclopedia-button`), Food Stall (`hud-food-stall-btn`), Food Bag (`toggle-food-inventory-btn`), Events (`hud-events-btn`), Help & Beta (`hud-help-beta-btn`), Settings (`open-settings-btn`), and the Dev/Debug toggle (`hud-dev-debug-toggle-btn`).
+  - Removed the permanent `desktop-control-hints` strip and top-right `hud-utility-bar`, gated `hud-secondary-details-strip` and `animal-status-strip` behind `isDevDebugOpen`, gated `proximity-chat-panel` and `emote-picker-bar` behind `isChatPanelOpen`, and capped all UI panels/modals at `max-h-[60vh]` on mobile viewports so no panel covers more than ~60% of a phone screen.
+  - Updated `apps/server/__tests__/hudAndGateErgonomics.test.ts`, `apps/web/e2e/playable-zoo-world.spec.ts`, `apps/web/e2e/multiplayer-sync.spec.ts`, and `apps/web/e2e/hud-gate-ergonomics.spec.ts` to verify the decluttered fresh-join HUD, 1-to-2 click reachability, mouse-look pause on panel open, mobile 60% height cap, and Dev/Debug toggle.
+- **Check Results**:
+  - `pnpm typecheck`: **PASS** (12/12 tasks green)
+  - `pnpm lint`: **PASS** (7/7 packages green)
+  - `pnpm test`: **PASS** (24 test files, 96 tests green across `@online-zoo/game-assets`, `@online-zoo/game-core`, `@online-zoo/game-client`, `@online-zoo/server`)
+  - Playwright E2E (`playable-zoo-world.spec.ts` + `multiplayer-sync.spec.ts`): **PASS** (2 passed)
+- **Assumptions**:
+  - Logged in `specs/hud-declutter/ASSUMPTIONS.md`: retained `isHudCompact` defaulting to `false` for backward compatibility with unit tests while introducing `isDevDebugOpen` (default `false`) for diagnostic/debug badges and `isChatPanelOpen` (default `false`) for the dock-opened Chat & Emotes panel.
+- **Anything to Review**:
+  - None; zero server or protocol changes were made, and all unit and E2E checks are green.
