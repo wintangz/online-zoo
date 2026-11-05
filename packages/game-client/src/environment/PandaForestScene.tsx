@@ -1,7 +1,9 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Sky } from '@react-three/drei';
+import { useStore } from 'zustand';
 import * as THREE from 'three';
+import { gameStore, SEASONAL_THEMES_BY_ID } from '@online-zoo/game-core';
 import { TerrainAndPaths } from './TerrainAndPaths';
 import { PerimeterEnclosure } from './PerimeterEnclosure';
 import { PondShoreline } from './PondShoreline';
@@ -148,6 +150,96 @@ const SkyAndAtmosphere: React.FC = () => {
   );
 };
 
+const SeasonalFestivalDecorations: React.FC = () => {
+  const seasonalTheme = useStore(gameStore, (s) => s.events.seasonalTheme);
+  const floatGroupRef = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (floatGroupRef.current) {
+      const t = clock.getElapsedTime();
+      floatGroupRef.current.position.y = Math.sin(t * 1.4) * 0.14;
+    }
+  });
+
+  if (seasonalTheme === 'none') {
+    return null;
+  }
+
+  const themeDesc = SEASONAL_THEMES_BY_ID[seasonalTheme];
+  const archPositions: Array<[number, number, number]> = [
+    [-5.2, 0, 14.2],
+    [-2.0, 0, -0.8],
+    [7.2, 0, 7.8]
+  ];
+
+  return (
+    <group name={`seasonal-decorations-${seasonalTheme}`}>
+      {/* Festive Sanctuary Arches & Garlands */}
+      {archPositions.map((pos, idx) => (
+        <group key={`seasonal-arch-${idx}`} position={pos}>
+          <mesh position={[-1.8, 1.5, 0]} castShadow>
+            <cylinderGeometry args={[0.1, 0.12, 3.0, 8]} />
+            <meshStandardMaterial color="#7c2d12" roughness={0.8} />
+          </mesh>
+          <mesh position={[1.8, 1.5, 0]} castShadow>
+            <cylinderGeometry args={[0.1, 0.12, 3.0, 8]} />
+            <meshStandardMaterial color="#7c2d12" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 3.05, 0]} castShadow>
+            <boxGeometry args={[4.1, 0.22, 0.28]} />
+            <meshStandardMaterial
+              color={themeDesc.accentColor}
+              emissive={themeDesc.foliageTintHex}
+              emissiveIntensity={0.28}
+              roughness={0.5}
+            />
+          </mesh>
+          {/* Hanging Seasonal Clusters / Lanterns */}
+          {[-1.1, 0, 1.1].map((offsetX, lIdx) => (
+            <mesh
+              key={`arch-ornament-${idx}-${lIdx}`}
+              position={[offsetX, 2.65, 0]}
+            >
+              <sphereGeometry args={[0.26, 12, 12]} />
+              <meshStandardMaterial
+                color={themeDesc.foliageTintHex}
+                emissive={themeDesc.accentColor}
+                emissiveIntensity={0.65}
+                roughness={0.35}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      {/* Gentle Floating Festival Orbs / Petals / Lanterns */}
+      <group ref={floatGroupRef} name="seasonal-floating-accents">
+        {[
+          [-6.4, 2.4, 12.8],
+          [-3.8, 2.7, 11.4],
+          [-1.2, 2.3, -2.2],
+          [8.6, 2.6, 8.8],
+          [-8.4, 2.5, 6.6],
+          [2.4, 2.6, -8.8]
+        ].map((pos, idx) => (
+          <mesh
+            key={`seasonal-orb-${idx}`}
+            position={pos as [number, number, number]}
+          >
+            <sphereGeometry args={[0.2, 10, 10]} />
+            <meshStandardMaterial
+              color={themeDesc.foliageTintHex}
+              emissive={themeDesc.accentColor}
+              emissiveIntensity={0.75}
+              roughness={0.3}
+            />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+};
+
 export const PandaForestScene: React.FC<GameLoopControllerProps> = (props) => {
   return (
     <group name="panda-forest-root-scene">
@@ -174,6 +266,7 @@ export const PandaForestScene: React.FC<GameLoopControllerProps> = (props) => {
       <PerimeterEnclosure />
       <PondShoreline />
       <InstancedFoliage />
+      <SeasonalFestivalDecorations />
       <InteractiveProps
         {...(props.multiplayerClient !== undefined
           ? { multiplayerClient: props.multiplayerClient }

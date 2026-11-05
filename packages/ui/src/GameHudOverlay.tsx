@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { useStore } from 'zustand';
-import { gameStore } from '@online-zoo/game-core';
+import {
+  computePassportProgressSummary,
+  gameStore,
+  getTotalOwnedFoodItems,
+  SEASONAL_THEMES_BY_ID
+} from '@online-zoo/game-core';
 
 export const GameHudOverlay: React.FC = () => {
   const phase = useStore(gameStore, (s) => s.phase);
@@ -15,16 +20,38 @@ export const GameHudOverlay: React.FC = () => {
   const social = useStore(gameStore, (s) => s.social);
   const encyclopedia = useStore(gameStore, (s) => s.animalSim.encyclopedia);
   const isEncyclopediaOpen = useStore(gameStore, (s) => s.animalSim.isEncyclopediaOpen);
+  const diningWallet = useStore(gameStore, (s) => s.dining.wallet);
+  const isInventoryOpen = useStore(gameStore, (s) => s.dining.isInventoryOpen);
+  const activeStallId = useStore(gameStore, (s) => s.dining.activeStallId);
+  const passportState = useStore(gameStore, (s) => s.passport.state);
+  const isPassportOpen = useStore(gameStore, (s) => s.passport.isPassportOpen);
+  const zooEventsMap = useStore(gameStore, (s) => s.events.events);
+  const seasonalTheme = useStore(gameStore, (s) => s.events.seasonalTheme);
+  const isEventsModalOpen = useStore(gameStore, (s) => s.events.isEventsModalOpen);
   const setPhase = useStore(gameStore, (s) => s.setPhase);
   const setCursorState = useStore(gameStore, (s) => s.setCursorState);
   const openAvatarCustomizer = useStore(gameStore, (s) => s.openAvatarCustomizer);
   const setSocialDrawerOpen = useStore(gameStore, (s) => s.setSocialDrawerOpen);
   const setEncyclopediaOpen = useStore(gameStore, (s) => s.setEncyclopediaOpen);
+  const setInventoryOpen = useStore(gameStore, (s) => s.setInventoryOpen);
+  const openFoodStall = useStore(gameStore, (s) => s.openFoodStall);
+  const closeFoodStall = useStore(gameStore, (s) => s.closeFoodStall);
+  const setPassportOpen = useStore(gameStore, (s) => s.setPassportOpen);
+  const setEventsModalOpen = useStore(gameStore, (s) => s.setEventsModalOpen);
   const [hudCopied, setHudCopied] = useState(false);
 
   const discoveredSpeciesCount = Object.values(encyclopedia.entries).filter(
     (e) => e.discovered
   ).length;
+  const totalOwnedFood = getTotalOwnedFoodItems(diningWallet.inventory);
+  const passportSummary = computePassportProgressSummary(
+    passportState,
+    encyclopedia
+  );
+  const activeEventsCount = Object.values(zooEventsMap).filter(
+    (e) => e.status === 'active'
+  ).length;
+  const activeSeasonDef = SEASONAL_THEMES_BY_ID[seasonalTheme];
 
   if (phase !== 'playing') {
     return null;
@@ -236,9 +263,83 @@ export const GameHudOverlay: React.FC = () => {
             >
               Lantern: {lanternLit ? 'Lit' : 'Off'}
             </span>
+            <span
+              data-testid="hud-currency-badge"
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-amber-400/40 bg-amber-500/20 px-2.5 py-1 text-center text-xs font-extrabold leading-none text-amber-200"
+            >
+              🪙 {diningWallet.currencyBalance} Coins
+            </span>
+            {passportState.activeBadge && (
+              <span
+                data-testid="hud-active-badge"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-lime-400/45 bg-lime-500/20 px-2.5 py-1 text-center text-xs font-extrabold leading-none text-lime-200"
+              >
+                🎖️ {passportState.activeBadge}
+              </span>
+            )}
+            {seasonalTheme !== 'none' && activeSeasonDef && (
+              <span
+                data-testid="hud-seasonal-badge"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-pink-400/45 bg-pink-500/20 px-2.5 py-1 text-center text-xs font-extrabold leading-none text-pink-200"
+              >
+                {activeSeasonDef.badgeIcon} {activeSeasonDef.label}
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="hud-events-btn"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setEventsModalOpen(!isEventsModalOpen);
+              }}
+              className="pointer-events-auto inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl border border-amber-300/60 bg-emerald-900/95 px-4 py-2.5 text-center text-xs font-extrabold leading-none text-amber-200 shadow-lg backdrop-blur-md transition hover:bg-emerald-800"
+            >
+              <span>🎪 Events ({activeEventsCount} Active)</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="hud-passport-btn"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setPassportOpen(!isPassportOpen);
+              }}
+              className="pointer-events-auto inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl border border-amber-300/55 bg-emerald-900/95 px-4 py-2.5 text-center text-xs font-extrabold leading-none text-amber-200 shadow-lg backdrop-blur-md transition hover:bg-emerald-800"
+            >
+              <span>🛂 Passport ({passportSummary.overallPercentage}%)</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="hud-food-stall-btn"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                if (activeStallId) {
+                  closeFoodStall();
+                } else {
+                  openFoodStall('prop-plaza-food-stall');
+                }
+              }}
+              className="pointer-events-auto inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl border border-amber-300/45 bg-emerald-900/90 px-4 py-2.5 text-center text-xs font-bold leading-none text-amber-100 shadow-lg backdrop-blur-md transition hover:bg-emerald-800"
+            >
+              <span>🍔 Food Stall</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="toggle-food-inventory-btn"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setInventoryOpen(!isInventoryOpen);
+              }}
+              className="pointer-events-auto inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl border border-lime-300/40 bg-emerald-900/90 px-4 py-2.5 text-center text-xs font-bold leading-none text-lime-100 shadow-lg backdrop-blur-md transition hover:bg-emerald-800"
+            >
+              <span>🎒 Food Bag ({totalOwnedFood})</span>
+            </button>
+
             <button
               type="button"
               data-testid="animal-encyclopedia-button"

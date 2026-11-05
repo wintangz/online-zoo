@@ -7,12 +7,15 @@ import {
   AnimalSimulationOverlay,
   AvatarCustomizerModal,
   EntryLoadingScreen,
+  EventsAndActivitiesOverlay,
+  FoodAndDiningOverlay,
   GameHudOverlay,
   InfoPlaqueModal,
   InteractionPromptBanner,
   SettingsMenuModal,
   SocialInteractionOverlay,
-  TouchControlsOverlay
+  TouchControlsOverlay,
+  ZooPassportOverlay
 } from '@online-zoo/ui';
 
 const DynamicZooGameCanvas = dynamic(
@@ -35,7 +38,10 @@ export const ZooWorldExperience: React.FC = () => {
       {/* 2D React + Tailwind Overlays */}
       <EntryLoadingScreen />
       <GameHudOverlay />
+      <EventsAndActivitiesOverlay />
+      <ZooPassportOverlay />
       <AnimalSimulationOverlay />
+      <FoodAndDiningOverlay />
       <SocialInteractionOverlay />
       <TouchControlsOverlay inputController={inputController} />
       <InteractionPromptBanner inputController={inputController} />

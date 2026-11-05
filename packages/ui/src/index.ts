@@ -7,3 +7,6 @@ export * from './SettingsMenuModal';
 export * from './AvatarCustomizerModal';
 export * from './SocialInteractionOverlay';
 export * from './AnimalSimulationOverlay';
+export * from './FoodAndDiningOverlay';
+export * from './ZooPassportOverlay';
+export * from './EventsAndActivitiesOverlay';
