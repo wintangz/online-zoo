@@ -513,6 +513,8 @@ export interface GameUIStoreState {
   events: EventsStoreSlice;
   betaReadiness: BetaReadinessStoreSlice;
   isHudCompact: boolean;
+  isDevDebugOpen: boolean;
+  isChatPanelOpen: boolean;
   isSettingsModalOpen: boolean;
   currentZoneId: WorldZoneId;
   transitionTargetZone: WorldZoneId | null;
@@ -525,6 +527,10 @@ export interface GameUIStoreState {
   setPhase: (phase: SessionPhase) => void;
   setHudCompact: (compact: boolean) => void;
   toggleHudCompact: () => void;
+  setDevDebugOpen: (isOpen: boolean) => void;
+  toggleDevDebug: () => void;
+  setChatPanelOpen: (isOpen: boolean) => void;
+  toggleChatPanel: () => void;
   setSettingsModalOpen: (isOpen: boolean) => void;
   setCurrentZoneId: (zoneId: WorldZoneId) => void;
   setTransitionTargetZone: (zoneId: WorldZoneId | null) => void;
@@ -749,6 +755,40 @@ export interface GameUIStoreState {
   resetSession: () => void;
 }
 
+export function computeIsAnyPanelOpen(
+  state: Pick<
+    GameUIStoreState,
+    | 'activePlaqueModal'
+    | 'identity'
+    | 'social'
+    | 'isChatPanelOpen'
+    | 'animalSim'
+    | 'dining'
+    | 'passport'
+    | 'events'
+    | 'betaReadiness'
+    | 'isSettingsModalOpen'
+    | 'phase'
+  >
+): boolean {
+  return (
+    state.phase === 'paused' ||
+    state.isSettingsModalOpen ||
+    state.activePlaqueModal !== null ||
+    state.identity.draft.isOpen ||
+    state.social.isSocialDrawerOpen ||
+    state.social.reportModalTarget !== null ||
+    state.isChatPanelOpen ||
+    state.animalSim.isEncyclopediaOpen ||
+    state.animalSim.inspectedAnimalId !== null ||
+    state.dining.isInventoryOpen ||
+    state.dining.activeStallId !== null ||
+    state.passport.isPassportOpen ||
+    state.events.isEventsModalOpen ||
+    state.betaReadiness.isHelpCenterOpen
+  );
+}
+
 const INITIAL_PROP_STATES: Record<string, { active: boolean; lastTriggeredAt: number }> = {
   'prop-stone-lantern': { active: true, lastTriggeredAt: 0 },
   'prop-wind-chime': { active: false, lastTriggeredAt: 0 },
@@ -781,6 +821,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   events: createInitialEventsSlice(),
   betaReadiness: createInitialBetaReadinessSlice(),
   isHudCompact: false,
+  isDevDebugOpen: false,
+  isChatPanelOpen: false,
   isSettingsModalOpen: false,
   currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
   transitionTargetZone: null,
@@ -788,17 +830,53 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
 
   setHudCompact: (isHudCompact) => set({ isHudCompact }),
   toggleHudCompact: () => set((state) => ({ isHudCompact: !state.isHudCompact })),
-  setSettingsModalOpen: (isSettingsModalOpen) => set({ isSettingsModalOpen }),
+  setDevDebugOpen: (isDevDebugOpen) => set({ isDevDebugOpen }),
+  toggleDevDebug: () => set((state) => ({ isDevDebugOpen: !state.isDevDebugOpen })),
+  setChatPanelOpen: (isChatPanelOpen) =>
+    set((state) => {
+      const next = { ...state, isChatPanelOpen };
+      return {
+        isChatPanelOpen,
+        isPointerLocked: isChatPanelOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen(next)
+      };
+    }),
+  toggleChatPanel: () =>
+    set((state) => {
+      const isChatPanelOpen = !state.isChatPanelOpen;
+      const next = { ...state, isChatPanelOpen };
+      return {
+        isChatPanelOpen,
+        isPointerLocked: isChatPanelOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen(next)
+      };
+    }),
+  setSettingsModalOpen: (isSettingsModalOpen) =>
+    set((state) => {
+      const next = { ...state, isSettingsModalOpen };
+      return {
+        isSettingsModalOpen,
+        isPointerLocked: isSettingsModalOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen(next)
+      };
+    }),
   setCurrentZoneId: (currentZoneId) => set({ currentZoneId }),
   setTransitionTargetZone: (transitionTargetZone) => set({ transitionTargetZone }),
   setPendingGateArrival: (pendingGateArrival) => set({ pendingGateArrival }),
   setPhase: (phase) =>
-    set((state) => ({
-      phase,
-      isPointerLocked: phase === 'playing' ? state.isPointerLocked : false,
-      isCursorRevealed:
-        phase === 'paused' ? true : phase === 'playing' ? false : state.isCursorRevealed
-    })),
+    set((state) => {
+      const next = { ...state, phase };
+      return {
+        phase,
+        isPointerLocked: phase === 'playing' ? state.isPointerLocked : false,
+        isCursorRevealed:
+          phase === 'paused'
+            ? true
+            : phase === 'playing'
+              ? computeIsAnyPanelOpen(next)
+              : state.isCursorRevealed
+      };
+    }),
   setLoadingProgress: (progress) =>
     set({ loadingProgress: Math.min(100, Math.max(0, Math.round(progress))) }),
   setLocomotionState: (locomotionState) => {
@@ -825,7 +903,14 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   },
   openPlaqueModal: (obj) =>
     set({ activePlaqueModal: obj, isPointerLocked: false, isCursorRevealed: true }),
-  closePlaqueModal: () => set({ activePlaqueModal: null, isCursorRevealed: false }),
+  closePlaqueModal: () =>
+    set((state) => {
+      const next = { ...state, activePlaqueModal: null };
+      return {
+        activePlaqueModal: null,
+        isCursorRevealed: computeIsAnyPanelOpen(next)
+      };
+    }),
   togglePropState: (objectId) =>
     set((state) => {
       const prev = state.propStates[objectId] ?? { active: false, lastTriggeredAt: 0 };
@@ -1034,9 +1119,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       }
     })),
   cancelAvatarCustomizer: () =>
-    set((state) => ({
-      isCursorRevealed: false,
-      identity: {
+    set((state) => {
+      const nextIdentity: PlayerIdentityStoreSlice = {
         ...state.identity,
         draft: {
           isOpen: false,
@@ -1045,8 +1129,12 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           isDirty: false,
           validation: validateDisplayName(state.identity.profile.displayName)
         }
-      }
-    })),
+      };
+      return {
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, identity: nextIdentity }),
+        identity: nextIdentity
+      };
+    }),
   setDraftDisplayName: (displayName) =>
     set((state) => ({
       identity: {
@@ -1126,9 +1214,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     });
     const outfitColors = getOutfitColors(updatedProfile.avatar.outfit);
 
-    set((cur) => ({
-      isCursorRevealed: false,
-      identity: {
+    set((cur) => {
+      const nextIdentity: PlayerIdentityStoreSlice = {
         profile: updatedProfile,
         draft: {
           isOpen: false,
@@ -1137,13 +1224,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
           isDirty: false,
           validation: nameResult
         }
-      },
-      multiplayer: {
-        ...cur.multiplayer,
-        localDisplayName: updatedProfile.displayName,
-        localAccentColor: outfitColors.accent
-      }
-    }));
+      };
+      return {
+        isCursorRevealed: computeIsAnyPanelOpen({ ...cur, identity: nextIdentity }),
+        identity: nextIdentity,
+        multiplayer: {
+          ...cur.multiplayer,
+          localDisplayName: updatedProfile.displayName,
+          localAccentColor: outfitColors.accent
+        }
+      };
+    });
 
     return {
       ok: true,
@@ -1451,14 +1542,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   },
 
   setSocialDrawerOpen: (isSocialDrawerOpen) =>
-    set((state) => ({
-      isPointerLocked: isSocialDrawerOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isSocialDrawerOpen ? true : state.isCursorRevealed,
-      social: {
+    set((state) => {
+      const nextSocial = {
         ...state.social,
         isSocialDrawerOpen
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isSocialDrawerOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, social: nextSocial }),
+        social: nextSocial
+      };
+    }),
 
   updateSocialPresence: (payload) =>
     set((state) => {
@@ -1636,22 +1730,30 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     })),
 
   closeReportModal: () =>
-    set((state) => ({
-      social: {
+    set((state) => {
+      const nextSocial = {
         ...state.social,
         reportModalTarget: null
-      }
-    })),
+      };
+      return {
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, social: nextSocial }),
+        social: nextSocial
+      };
+    }),
 
   recordSubmittedReport: (report) =>
-    set((state) => ({
-      social: {
+    set((state) => {
+      const nextSocial = {
         ...state.social,
         submittedReports: [...state.social.submittedReports, report],
         reportModalTarget: null,
         reportConfirmationMessage: `Report submitted for ${report.reportedDisplayName} (${report.reason}). Thank you for helping keep the zoo safe.`
-      }
-    })),
+      };
+      return {
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, social: nextSocial }),
+        social: nextSocial
+      };
+    }),
 
   setSocialNotice: (socialNotice) =>
     set((state) => ({
@@ -1675,13 +1777,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
 
   inspectAnimal: (animalId) => {
     if (!animalId) {
-      set((state) => ({
-        animalSim: {
+      set((state) => {
+        const nextAnimalSim = {
           ...state.animalSim,
           inspectedAnimalId: null,
           feedingNotice: null
-        }
-      }));
+        };
+        return {
+          isCursorRevealed: computeIsAnyPanelOpen({ ...state, animalSim: nextAnimalSim }),
+          animalSim: nextAnimalSim
+        };
+      });
       return;
     }
 
@@ -1714,14 +1820,17 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   },
 
   setEncyclopediaOpen: (isOpen) =>
-    set((state) => ({
-      isPointerLocked: isOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isOpen ? true : false,
-      animalSim: {
+    set((state) => {
+      const nextAnimalSim = {
         ...state.animalSim,
         isEncyclopediaOpen: isOpen
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, animalSim: nextAnimalSim }),
+        animalSim: nextAnimalSim
+      };
+    }),
 
   discoverAnimalSpecies: (speciesId) => {
     const cur = get().animalSim.encyclopedia;
@@ -1796,24 +1905,30 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     })),
 
   closeFoodStall: () =>
-    set((state) => ({
-      isCursorRevealed: false,
-      dining: {
+    set((state) => {
+      const nextDining = {
         ...state.dining,
         activeStallId: null,
         purchaseFeedback: null
-      }
-    })),
+      };
+      return {
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, dining: nextDining }),
+        dining: nextDining
+      };
+    }),
 
   setInventoryOpen: (isInventoryOpen) =>
-    set((state) => ({
-      isPointerLocked: isInventoryOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isInventoryOpen ? true : state.isCursorRevealed,
-      dining: {
+    set((state) => {
+      const nextDining = {
         ...state.dining,
         isInventoryOpen
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isInventoryOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, dining: nextDining }),
+        dining: nextDining
+      };
+    }),
 
   applyDiningWalletUpdate: (currencyBalance, inventory) => {
     const nextWallet = {
@@ -1993,16 +2108,19 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   },
 
   setPassportOpen: (isPassportOpen, tab) =>
-    set((state) => ({
-      isPointerLocked: isPassportOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isPassportOpen ? true : false,
-      passport: {
+    set((state) => {
+      const nextPassport = {
         ...state.passport,
         isPassportOpen,
         ...(tab !== undefined ? { activeTab: tab } : {}),
         rewardFeedback: null
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isPassportOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, passport: nextPassport }),
+        passport: nextPassport
+      };
+    }),
 
   setPassportTab: (activeTab) =>
     set((state) => ({
@@ -2365,15 +2483,18 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
     })),
 
   setEventsModalOpen: (isOpen) =>
-    set((state) => ({
-      isPointerLocked: isOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isOpen ? true : false,
-      events: {
+    set((state) => {
+      const nextEvents = {
         ...state.events,
         isEventsModalOpen: isOpen,
         eventFeedback: null
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, events: nextEvents }),
+        events: nextEvents
+      };
+    }),
 
   applyZooEventsSnapshot: (payload) =>
     set((state) => {
@@ -2633,15 +2754,18 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
   },
 
   setHelpCenterOpen: (isOpen, tab) =>
-    set((state) => ({
-      isPointerLocked: isOpen ? false : state.isPointerLocked,
-      isCursorRevealed: isOpen ? true : false,
-      betaReadiness: {
+    set((state) => {
+      const nextBeta = {
         ...state.betaReadiness,
         isHelpCenterOpen: isOpen,
         activeTab: tab ?? state.betaReadiness.activeTab
-      }
-    })),
+      };
+      return {
+        isPointerLocked: isOpen ? false : state.isPointerLocked,
+        isCursorRevealed: computeIsAnyPanelOpen({ ...state, betaReadiness: nextBeta }),
+        betaReadiness: nextBeta
+      };
+    }),
 
   setHelpCenterTab: (tab) =>
     set((state) => ({
@@ -2749,6 +2873,8 @@ export const gameStore = createStore<GameUIStoreState>((set, get) => ({
       events: createInitialEventsSlice(),
       betaReadiness: createInitialBetaReadinessSlice(),
       isHudCompact: false,
+      isDevDebugOpen: false,
+      isChatPanelOpen: false,
       isSettingsModalOpen: false,
       currentZoneId: resolveZoneForRoomId(INITIAL_MULTIPLAYER_UI_STATE.roomId).zoneId,
       transitionTargetZone: null,

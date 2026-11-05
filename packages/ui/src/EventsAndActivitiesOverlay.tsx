@@ -333,7 +333,7 @@ export const EventsAndActivitiesOverlay: React.FC = () => {
           data-testid="zoo-events-modal"
           className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-6"
         >
-          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-amber-300/40 bg-emerald-950/95 text-white shadow-2xl">
+          <div className="flex max-h-[60vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-amber-300/40 bg-emerald-950/95 text-white shadow-2xl sm:max-h-[85vh]">
             {/* Modal Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 bg-emerald-900/60 px-5 py-4">
               <div className="flex items-center gap-3">

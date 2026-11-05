@@ -75,7 +75,7 @@ export const AvatarCustomizerModal: React.FC = () => {
       data-ui-interactive="true"
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-6"
     >
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-emerald-400/35 bg-emerald-950/95 p-5 text-white shadow-2xl sm:p-7">
+      <div className="max-h-[60vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-emerald-400/35 bg-emerald-950/95 p-5 text-white shadow-2xl sm:max-h-[85vh] sm:p-7">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/15 pb-4">
           <div className="min-w-0 flex-1">

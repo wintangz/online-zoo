@@ -34,14 +34,43 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     await enterBtn.click();
     await expect(page.getByTestId('zoo-game-canvas-container')).toBeVisible();
 
-    // 2. Minimal HUD & Initial Idle State (US1, US4)
+    // 2. Decluttered HUD on Fresh Join (hud-declutter: bare zoo view + single dock + dev toggle)
     const hud = page.getByTestId('game-hud-overlay');
     await expect(hud).toBeVisible();
-    const locomotionBadge = page.getByTestId('locomotion-state-badge');
-    await expect(locomotionBadge).toHaveText('Idle');
+    await expect(page.getByTestId('hud-status-bar')).toBeVisible();
+    await expect(page.getByTestId('hud-zone-badge')).toBeVisible();
+    await expect(page.getByTestId('local-visitor-badge')).toBeVisible();
+    await expect(page.getByTestId('hud-action-dock')).toBeVisible();
+
+    // Permanent controls strip, chat panel, and debug telemetry are hidden by default on fresh join
+    await expect(page.getByTestId('desktop-control-hints')).toHaveCount(0);
+    await expect(page.getByTestId('hud-utility-bar')).toHaveCount(0);
+    await expect(page.getByTestId('proximity-chat-panel')).toHaveCount(0);
+    await expect(page.getByTestId('hud-secondary-details-strip')).toHaveCount(0);
+    await expect(page.getByTestId('animal-status-strip')).toHaveCount(0);
 
     // Wait for runtime bridge to attach
     await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__ONLINE_ZOO_RUNTIME__));
+
+    // Verify opening a dock panel (Chat & Emotes) opens within 1 click and pauses mouse-look
+    await page.getByTestId('hud-chat-panel-btn').click();
+    await expect(page.getByTestId('proximity-chat-panel')).toBeVisible();
+    await expect(page.getByTestId('emote-picker-bar')).toBeVisible();
+    const cursorRevealedWhileChatOpen = await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: { gameStore: { getState: () => { isCursorRevealed: boolean } } };
+      }).__ONLINE_ZOO_RUNTIME__;
+      return rt.gameStore.getState().isCursorRevealed;
+    });
+    expect(cursorRevealedWhileChatOpen).toBe(true);
+    await page.getByTestId('close-chat-panel-btn').click();
+    await expect(page.getByTestId('proximity-chat-panel')).toHaveCount(0);
+
+    // Enable Dev / Debug telemetry strip via dock toggle to inspect locomotion & camera badges
+    await page.getByTestId('hud-dev-debug-toggle-btn').click();
+    await expect(page.getByTestId('hud-secondary-details-strip')).toBeVisible();
+    const locomotionBadge = page.getByTestId('locomotion-state-badge');
+    await expect(locomotionBadge).toHaveText('Idle');
 
     // 3. Desktop WASD Walking, Shift Running, and Space Jumping (US1, FR-005..FR-007, FR-012)
     await page.keyboard.down('KeyW');
@@ -245,6 +274,17 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
       rt.gameStore.getState().setActiveDevice('touch');
     });
     await expect(page.getByTestId('virtual-joystick-pad')).toBeVisible();
+
+    // Verify no panel covers more than ~60% of a phone screen (844 * 0.6 = 506.4px)
+    await page.getByTestId('hud-passport-btn').click();
+    const passportModal = page.getByTestId('zoo-passport-modal');
+    await expect(passportModal).toBeVisible();
+    const passportBox = await passportModal.boundingBox();
+    expect(passportBox).not.toBeNull();
+    if (passportBox) {
+      expect(passportBox.height).toBeLessThanOrEqual(844 * 0.62);
+    }
+    await page.getByTestId('close-passport-btn').click();
   });
 });
 

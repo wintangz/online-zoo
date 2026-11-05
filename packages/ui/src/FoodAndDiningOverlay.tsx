@@ -113,7 +113,7 @@ export const FoodAndDiningOverlay: React.FC = () => {
       {isInventoryOpen && (
         <div
           data-testid="food-inventory-drawer"
-          className="pointer-events-auto fixed right-4 top-20 z-30 w-full max-w-sm rounded-3xl border border-amber-300/40 bg-emerald-950/95 p-5 text-white shadow-2xl backdrop-blur-lg sm:right-6"
+          className="pointer-events-auto fixed right-4 top-16 z-30 max-h-[60vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-amber-300/40 bg-emerald-950/95 p-5 text-white shadow-2xl backdrop-blur-lg sm:right-6 sm:top-20 sm:max-h-[80vh]"
         >
           <div className="flex items-center justify-between border-b border-white/15 pb-3">
             <div>
@@ -220,7 +220,7 @@ export const FoodAndDiningOverlay: React.FC = () => {
           data-testid="food-stall-modal"
           className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-6"
         >
-          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-amber-300/45 bg-emerald-950/95 text-white shadow-2xl">
+          <div className="flex max-h-[60vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-amber-300/45 bg-emerald-950/95 text-white shadow-2xl sm:max-h-[85vh]">
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 bg-emerald-900/60 px-5 py-4">
               <div>

@@ -38,7 +38,7 @@ export const AnimalSimulationOverlay: React.FC = () => {
   const setEncyclopediaOpen = useStore(gameStore, (s) => s.setEncyclopediaOpen);
   const clearDiscoveryToast = useStore(gameStore, (s) => s.clearDiscoveryToast);
   const setFeedingNotice = useStore(gameStore, (s) => s.setFeedingNotice);
-  const isHudCompact = useStore(gameStore, (s) => s.isHudCompact);
+  const isDevDebugOpen = useStore(gameStore, (s) => s.isDevDebugOpen);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [stripCollapsed, setStripCollapsed] = useState(false);
@@ -94,8 +94,8 @@ export const AnimalSimulationOverlay: React.FC = () => {
 
   return (
     <>
-      {/* Compact Habitat Animal Status Strip (docked neatly under top-left status bar) */}
-      {!isHudCompact && (
+      {/* Compact Habitat Animal Status Strip (Dev / Debug Toggle Only) */}
+      {isDevDebugOpen && (
         <div
           data-testid="animal-status-strip"
           className="pointer-events-auto fixed left-3 top-[5.5rem] z-20 flex max-w-[60vw] flex-wrap items-center gap-1 rounded-xl border border-white/15 bg-emerald-950/70 px-2 py-1 text-[10px] text-white shadow-md backdrop-blur-md sm:left-4"
@@ -173,7 +173,7 @@ export const AnimalSimulationOverlay: React.FC = () => {
       {inspectedAnimal && inspectedSpecies && (
         <div
           data-testid="animal-info-panel"
-          className="pointer-events-auto fixed right-4 top-24 z-40 flex max-h-[80vh] w-[92vw] max-w-md flex-col overflow-y-auto rounded-3xl border border-emerald-300/35 bg-slate-950/95 p-5 text-white shadow-2xl backdrop-blur-xl sm:right-6"
+          className="pointer-events-auto fixed right-4 top-20 z-40 flex max-h-[60vh] w-[92vw] max-w-md flex-col overflow-y-auto rounded-3xl border border-emerald-300/35 bg-slate-950/95 p-5 text-white shadow-2xl backdrop-blur-xl sm:right-6 sm:top-24 sm:max-h-[80vh]"
         >
           <div className="flex items-start justify-between gap-3 border-b border-white/15 pb-3">
             <div className="flex items-center gap-2.5">
@@ -306,7 +306,7 @@ export const AnimalSimulationOverlay: React.FC = () => {
           data-testid="animal-encyclopedia-modal"
           className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
         >
-          <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-emerald-300/35 bg-slate-950/95 p-5 text-white shadow-2xl sm:p-6">
+          <div className="flex max-h-[60vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-emerald-300/35 bg-slate-950/95 p-5 text-white shadow-2xl sm:max-h-[80vh] sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-4">
               <div>
                 <h2 className="text-lg font-extrabold tracking-wide text-white">

@@ -29,7 +29,7 @@ export const SettingsMenuModal: React.FC = () => {
       data-testid="settings-menu-modal"
       className="fixed inset-0 z-50 flex select-none items-center justify-center bg-black/60 p-4 backdrop-blur-md"
     >
-      <div className="w-full max-w-md rounded-3xl border border-emerald-400/30 bg-emerald-950/95 p-6 text-white shadow-2xl">
+      <div className="max-h-[60vh] w-full max-w-md overflow-y-auto rounded-3xl border border-emerald-400/30 bg-emerald-950/95 p-6 text-white shadow-2xl sm:max-h-[85vh]">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-extrabold">Game Menu & Settings</h2>
           <span className="rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300">

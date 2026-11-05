@@ -17,6 +17,9 @@ test.describe('Feature 002: Multiplayer Foundation (Multi-Session Sync & Recover
       await expect(enterBtnA).toBeEnabled({ timeout: 10000 });
       await enterBtnA.click();
 
+      // Enable Dev / Debug telemetry strip in Session A to inspect multiplayer & visitor badges
+      await pageA.getByTestId('hud-dev-debug-toggle-btn').click();
+
       await expect(pageA.getByTestId('multiplayer-status-badge')).toHaveText('Connected', {
         timeout: 5000
       });
@@ -40,6 +43,9 @@ test.describe('Feature 002: Multiplayer Foundation (Multi-Session Sync & Recover
       const enterBtnB = pageB.getByTestId('enter-world-btn');
       await expect(enterBtnB).toBeEnabled({ timeout: 10000 });
       await enterBtnB.click();
+
+      // Enable Dev / Debug telemetry strip in Session B
+      await pageB.getByTestId('hud-dev-debug-toggle-btn').click();
 
       await expect(pageB.getByTestId('multiplayer-status-badge')).toHaveText('Connected', {
         timeout: 5000

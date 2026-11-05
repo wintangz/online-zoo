@@ -111,4 +111,44 @@ describe('Feature 011 — Streamlined HUD & Entrance Gate Arrival (FR-001..FR-00
     gameStore.getState().resetSession();
     expect(gameStore.getState().isHudCompact).toBe(false);
   });
+
+  it('defaults isDevDebugOpen and isChatPanelOpen to false and pauses mouse-look (isCursorRevealed) whenever any dock panel is open', () => {
+    const store = gameStore.getState();
+    expect(store.isDevDebugOpen).toBe(false);
+    expect(store.isChatPanelOpen).toBe(false);
+    expect(store.isCursorRevealed).toBe(false);
+
+    // Toggle Dev Debug strip
+    store.toggleDevDebug();
+    expect(gameStore.getState().isDevDebugOpen).toBe(true);
+    store.setDevDebugOpen(false);
+    expect(gameStore.getState().isDevDebugOpen).toBe(false);
+
+    // Opening Chat panel reveals cursor & pauses mouse-look
+    store.toggleChatPanel();
+    expect(gameStore.getState().isChatPanelOpen).toBe(true);
+    expect(gameStore.getState().isCursorRevealed).toBe(true);
+
+    // Opening Social drawer while Chat panel is open keeps cursor revealed when one closes
+    store.setSocialDrawerOpen(true);
+    expect(gameStore.getState().isCursorRevealed).toBe(true);
+
+    store.setChatPanelOpen(false);
+    expect(gameStore.getState().isCursorRevealed).toBe(true);
+
+    // Closing the last open panel restores mouse-look (isCursorRevealed = false)
+    store.setSocialDrawerOpen(false);
+    expect(gameStore.getState().isCursorRevealed).toBe(false);
+
+    // Verify Passport, Encyclopedia, Inventory, Events, Help, and Settings panels also pause mouse-look
+    store.setPassportOpen(true);
+    expect(gameStore.getState().isCursorRevealed).toBe(true);
+    store.setPassportOpen(false);
+    expect(gameStore.getState().isCursorRevealed).toBe(false);
+
+    store.setSettingsModalOpen(true);
+    expect(gameStore.getState().isCursorRevealed).toBe(true);
+    store.setSettingsModalOpen(false);
+    expect(gameStore.getState().isCursorRevealed).toBe(false);
+  });
 });

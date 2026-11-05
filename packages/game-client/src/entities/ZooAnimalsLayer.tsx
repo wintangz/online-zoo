@@ -30,7 +30,8 @@ const SingleAnimalEntity: React.FC<{
   animal: AnimalInstanceState;
   index: number;
   isInspected: boolean;
-}> = ({ animal, index, isInspected }) => {
+  isDevDebugOpen: boolean;
+}> = ({ animal, index, isInspected, isDevDebugOpen }) => {
   const rootRef = useRef<THREE.Group>(null);
   const rigRef = useRef<THREE.Group>(null);
   const catalog = ANIMAL_SPECIES_CATALOG[animal.speciesId];
@@ -129,29 +130,31 @@ const SingleAnimalEntity: React.FC<{
         </mesh>
       )}
 
-      {/* Floating Animal Name & Behavior Tag */}
-      <Html position={[0, 1.55, 0]} center distanceFactor={14} zIndexRange={[10, 0]}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            gameStore.getState().inspectAnimal(animal.animalId);
-          }}
-          className="pointer-events-auto flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/25 bg-slate-950/80 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm transition hover:border-emerald-300/60 hover:bg-slate-900"
-        >
-          <span>{catalog.badgeIcon}</span>
-          <span>{animal.displayName}</span>
-          <span
-            className="rounded-full px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider"
-            style={{
-              backgroundColor: PALETTE_COLORS.mossShadow,
-              color: PALETTE_COLORS.sunflowerGold
+      {/* Floating Animal Name & Behavior Tag (Dev/Debug Toggle Only) */}
+      {isDevDebugOpen && (
+        <Html position={[0, 1.55, 0]} center distanceFactor={14} zIndexRange={[10, 0]}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              gameStore.getState().inspectAnimal(animal.animalId);
             }}
+            className="pointer-events-auto flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/25 bg-slate-950/80 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm transition hover:border-emerald-300/60 hover:bg-slate-900"
           >
-            {animal.behaviorState}
-          </span>
-        </button>
-      </Html>
+            <span>{catalog.badgeIcon}</span>
+            <span>{animal.displayName}</span>
+            <span
+              className="rounded-full px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                backgroundColor: PALETTE_COLORS.mossShadow,
+                color: PALETTE_COLORS.sunflowerGold
+              }}
+            >
+              {animal.behaviorState}
+            </span>
+          </button>
+        </Html>
+      )}
     </group>
   );
 };
@@ -160,6 +163,7 @@ export const ZooAnimalsLayer: React.FC = () => {
   const animals = useStore(gameStore, (s) => s.animalSim.animals);
   const habitatFeedings = useStore(gameStore, (s) => s.animalSim.habitatFeedings);
   const inspectedAnimalId = useStore(gameStore, (s) => s.animalSim.inspectedAnimalId);
+  const isDevDebugOpen = useStore(gameStore, (s) => s.isDevDebugOpen);
 
   const pandaHabitat = ZOO_HABITAT_ZONES['habitat-panda-grove'];
   const penguinHabitat = ZOO_HABITAT_ZONES['habitat-penguin-cove'];
@@ -254,6 +258,7 @@ export const ZooAnimalsLayer: React.FC = () => {
           animal={animal}
           index={idx}
           isInspected={inspectedAnimalId === animal.animalId}
+          isDevDebugOpen={isDevDebugOpen}
         />
       ))}
     </group>

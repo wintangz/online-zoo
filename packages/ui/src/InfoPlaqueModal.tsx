@@ -17,7 +17,7 @@ export const InfoPlaqueModal: React.FC = () => {
       data-testid="info-plaque-modal"
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
     >
-      <div className="w-full max-w-md rounded-3xl border border-amber-300/40 bg-emerald-950/95 p-6 text-white shadow-2xl">
+      <div className="max-h-[60vh] w-full max-w-md overflow-y-auto rounded-3xl border border-amber-300/40 bg-emerald-950/95 p-6 text-white shadow-2xl sm:max-h-[85vh]">
         <div className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-300">
           {activePlaqueModal.title}
         </div>

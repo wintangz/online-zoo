@@ -4,6 +4,7 @@ import {
   ANIMAL_DISCOVERY_RADIUS_METERS,
   CameraControllerCore,
   CharacterControllerCore,
+  computeIsAnyPanelOpen,
   findGateLinkByObjectId,
   gameStore,
   getZoneById,
@@ -132,6 +133,10 @@ export function stepGameRuntimeTick(
       storeState.closeReportModal();
     } else if (storeState.social.isSocialDrawerOpen) {
       storeState.setSocialDrawerOpen(false);
+    } else if (storeState.isChatPanelOpen) {
+      storeState.setChatPanelOpen(false);
+    } else if (storeState.isSettingsModalOpen) {
+      storeState.setSettingsModalOpen(false);
     } else if (storeState.phase === 'playing') {
       storeState.setPhase('paused');
       storeState.setCursorState(false, true);
@@ -297,11 +302,14 @@ export function stepGameRuntimeTick(
     activeLayout
   );
 
+  const isMouseLookPaused =
+    storeState.isCursorRevealed || computeIsAnyPanelOpen(storeState);
+
   const camOut = cameraController.step({
     targetPosition: mutableRuntimeState.avatar.position,
-    lookDeltaX: snapshot.lookDeltaX,
-    lookDeltaY: snapshot.lookDeltaY,
-    zoomDelta: snapshot.zoomDelta,
+    lookDeltaX: isMouseLookPaused ? 0 : snapshot.lookDeltaX,
+    lookDeltaY: isMouseLookPaused ? 0 : snapshot.lookDeltaY,
+    zoomDelta: isMouseLookPaused ? 0 : snapshot.zoomDelta,
     sensitivity: storeState.settings.cameraSensitivity,
     invertY: storeState.settings.invertCameraY,
     obstacleHitDistance: hitDist,

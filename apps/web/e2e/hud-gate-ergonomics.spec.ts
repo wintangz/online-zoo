@@ -12,56 +12,32 @@ test.describe('Feature 011 — Streamlined HUD & Entrance Gate Arrival E2E', () 
     await expect(enterButton).toBeEnabled({ timeout: 25_000 });
     await enterButton.click();
 
-    await expect(page.getByTestId('multiplayer-status-badge')).toHaveText('Connected', {
-      timeout: 15_000
-    });
-
-    // 1. Verify Streamlined HUD Layout & Zero Panel Overlap (US2, FR-004..FR-007, SC-002, SC-003)
+    // 1. Verify Decluttered HUD Layout on Fresh Join
     const statusBar = page.getByTestId('hud-status-bar');
-    const utilityBar = page.getByTestId('hud-utility-bar');
     const actionDock = page.getByTestId('hud-action-dock');
     const onboardingModal = page.getByTestId('onboarding-guide-modal');
-    const chatPanel = page.getByTestId('proximity-chat-panel');
 
     await expect(statusBar).toBeVisible();
-    await expect(utilityBar).toBeVisible();
     await expect(actionDock).toBeVisible();
     await expect(onboardingModal).toBeVisible();
-    await expect(chatPanel).toBeVisible();
-
-    // Verify top-right utility bar has only 3 buttons and Bottom Activity Dock has the 6 gameplay buttons
-    await expect(utilityBar.locator('button')).toHaveCount(3);
-    await expect(actionDock.locator('button')).toHaveCount(6);
-
-    // Verify zero bounding-box overlap between onboarding-guide-modal and proximity-chat-panel
-    const onboardingBox = await onboardingModal.boundingBox();
-    const chatBox = await chatPanel.boundingBox();
-    expect(onboardingBox).not.toBeNull();
-    expect(chatBox).not.toBeNull();
-    if (onboardingBox && chatBox) {
-      const overlapsHorizontally =
-        onboardingBox.x < chatBox.x + chatBox.width &&
-        onboardingBox.x + onboardingBox.width > chatBox.x;
-      const overlapsVertically =
-        onboardingBox.y < chatBox.y + chatBox.height &&
-        onboardingBox.y + onboardingBox.height > chatBox.y;
-      expect(overlapsHorizontally && overlapsVertically).toBe(false);
-    }
+    await expect(page.getByTestId('hud-secondary-details-strip')).toHaveCount(0);
+    await expect(page.getByTestId('animal-status-strip')).toHaveCount(0);
+    await expect(page.getByTestId('proximity-chat-panel')).toHaveCount(0);
 
     // Dismiss onboarding card
     await page.getByTestId('dismiss-onboarding-btn').click();
     await expect(onboardingModal).toBeHidden();
 
-    // Test Minimal HUD toggle button (FR-004)
+    // Test Dev / Debug HUD toggle button
+    await page.getByTestId('hud-dev-debug-toggle-btn').click();
     await expect(page.getByTestId('hud-secondary-details-strip')).toBeVisible();
     await expect(page.getByTestId('animal-status-strip')).toBeVisible();
-    await page.getByTestId('hud-compact-toggle-btn').click();
-    await expect(page.getByTestId('hud-secondary-details-strip')).toBeHidden();
-    await expect(page.getByTestId('animal-status-strip')).toBeHidden();
-
-    // Toggle back to expanded HUD
-    await page.getByTestId('hud-compact-toggle-btn').click();
-    await expect(page.getByTestId('hud-secondary-details-strip')).toBeVisible();
+    await expect(page.getByTestId('multiplayer-status-badge')).toHaveText('Connected', {
+      timeout: 15_000
+    });
+    await page.getByTestId('hud-dev-debug-toggle-btn').click();
+    await expect(page.getByTestId('hud-secondary-details-strip')).toHaveCount(0);
+    await expect(page.getByTestId('animal-status-strip')).toHaveCount(0);
 
     // 2. Verify Starting Behind the Entrance Gate & Walking Forward Into the Gate (US1, FR-001..FR-003, SC-001)
     const initialCheck = await page.evaluate(() => {

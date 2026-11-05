@@ -15,7 +15,6 @@ export const GameHudOverlay: React.FC = () => {
   const activeDevice = useStore(gameStore, (s) => s.activeDevice);
   const isPointerLocked = useStore(gameStore, (s) => s.isPointerLocked);
   const isCursorRevealed = useStore(gameStore, (s) => s.isCursorRevealed);
-  const showControlHints = useStore(gameStore, (s) => s.settings.showControlHints);
   const propStates = useStore(gameStore, (s) => s.propStates);
   const multiplayer = useStore(gameStore, (s) => s.multiplayer);
   const identityProfile = useStore(gameStore, (s) => s.identity.profile);
@@ -32,7 +31,8 @@ export const GameHudOverlay: React.FC = () => {
   const isEventsModalOpen = useStore(gameStore, (s) => s.events.isEventsModalOpen);
   const maintenanceNotice = useStore(gameStore, (s) => s.betaReadiness.maintenanceNotice);
   const isHelpCenterOpen = useStore(gameStore, (s) => s.betaReadiness.isHelpCenterOpen);
-  const isHudCompact = useStore(gameStore, (s) => s.isHudCompact);
+  const isDevDebugOpen = useStore(gameStore, (s) => s.isDevDebugOpen);
+  const isChatPanelOpen = useStore(gameStore, (s) => s.isChatPanelOpen);
   const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
   const activeZone = getZoneById(currentZoneId);
 
@@ -46,7 +46,8 @@ export const GameHudOverlay: React.FC = () => {
   const setPassportOpen = useStore(gameStore, (s) => s.setPassportOpen);
   const setEventsModalOpen = useStore(gameStore, (s) => s.setEventsModalOpen);
   const setHelpCenterOpen = useStore(gameStore, (s) => s.setHelpCenterOpen);
-  const toggleHudCompact = useStore(gameStore, (s) => s.toggleHudCompact);
+  const toggleDevDebug = useStore(gameStore, (s) => s.toggleDevDebug);
+  const toggleChatPanel = useStore(gameStore, (s) => s.toggleChatPanel);
   const [copiedHudId, setCopiedHudId] = useState(false);
 
   const discoveredSpeciesCount = ANIMAL_SPECIES_IDS.filter(
@@ -84,9 +85,12 @@ export const GameHudOverlay: React.FC = () => {
       } else if (e.code === 'KeyP' && phase === 'playing') {
         e.preventDefault();
         setPassportOpen(!gameStore.getState().passport.isPassportOpen);
+      } else if (e.code === 'KeyC' && phase === 'playing') {
+        e.preventDefault();
+        gameStore.getState().toggleChatPanel();
       } else if (e.code === 'KeyH' && phase === 'playing') {
         e.preventDefault();
-        gameStore.getState().toggleHudCompact();
+        gameStore.getState().toggleDevDebug();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -144,15 +148,13 @@ export const GameHudOverlay: React.FC = () => {
       data-testid="game-hud-overlay"
       className="pointer-events-none fixed inset-0 z-20 flex select-none flex-col justify-between p-3 sm:p-4"
     >
-      {/* Top Row: Compact Sanctuary Status Pill (Left) + 3 Compact Utility Pills (Right) */}
+      {/* Top-Left Persistent Chip: ONLY Current Zone Name + Player Name & Avatar Chip */}
       <div className="flex flex-wrap items-start justify-between gap-2">
-        {/* Top-Left Compact Sanctuary Status Bar */}
         <div
           data-testid="hud-status-bar"
           className="pointer-events-auto flex max-w-[94vw] flex-col gap-1 rounded-2xl border border-white/15 bg-emerald-950/75 px-3 py-1.5 text-white shadow-lg backdrop-blur-md"
         >
-          {/* Primary Compact Row */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             <span
               data-testid="hud-zone-badge"
               className="inline-flex items-center gap-1 text-xs font-extrabold tracking-tight text-white"
@@ -161,74 +163,70 @@ export const GameHudOverlay: React.FC = () => {
               <span>{activeZone.displayName}</span>
             </span>
 
-            <span
-              data-testid="multiplayer-status-badge"
-              data-connection-status={multiplayer.status}
-              className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold leading-none ${statusBadgeColors[multiplayer.status]}`}
+            <span className="text-white/25">•</span>
+
+            <button
+              type="button"
+              data-testid="open-avatar-customizer-btn"
+              data-ui-interactive="true"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                openAvatarCustomizer();
+              }}
+              title="Customize Avatar & Display Name"
+              className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-400/35 bg-emerald-900/65 px-2.5 py-0.5 text-[11px] font-semibold leading-none text-emerald-100 transition hover:bg-emerald-800/80 active:scale-95"
             >
               <span
-                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                  multiplayer.status === 'connected'
-                    ? 'bg-emerald-300'
-                    : multiplayer.status === 'disconnected'
-                      ? 'bg-rose-300'
-                      : 'animate-pulse bg-amber-300'
-                }`}
-              />
-              <span className="leading-none">{statusLabels[multiplayer.status]}</span>
-            </span>
-
-            <span
-              data-testid="visitor-count-badge"
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold leading-none text-emerald-100"
-            >
-              Visitors: {multiplayer.visitorCount}
-            </span>
-
-            <span
-              data-testid="hud-currency-badge"
-              className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-amber-300/45 bg-amber-500/20 px-2 py-0.5 text-[10px] font-extrabold leading-none text-amber-200"
-            >
-              <span>🪙</span>
-              <span>{diningWallet.currencyBalance} Coins</span>
-            </span>
-
-            <span
-              data-testid="local-visitor-badge"
-              className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-emerald-400/30 bg-emerald-900/60 px-2 py-0.5 text-[10px] font-semibold leading-none text-emerald-100"
-            >
-              <span
-                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                className="inline-block h-2 w-2 shrink-0 rounded-full"
                 style={{ backgroundColor: multiplayer.localAccentColor ?? '#10b981' }}
               />
-              <span className="leading-none">
+              <span data-testid="local-visitor-badge" className="leading-none">
                 {identityProfile.isCustomized
                   ? identityProfile.displayName
                   : multiplayer.localDisplayName ?? identityProfile.displayName}
               </span>
-            </span>
-
-            <button
-              type="button"
-              data-testid="hud-compact-toggle-btn"
-              data-ui-interactive="true"
-              onClick={(e) => {
-                e.currentTarget.blur();
-                toggleHudCompact();
-              }}
-              title="Toggle Minimal / Detailed HUD (H)"
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-bold leading-none text-emerald-100 transition hover:bg-white/20"
-            >
-              {isHudCompact ? 'Expand HUD [H]' : 'Minimal HUD [H]'}
+              <span className="text-[10px] text-emerald-300">✨</span>
             </button>
           </div>
 
-          {/* Secondary Micro-Details Strip (visible by default for diagnostics & E2E, collapsible via Minimal HUD) */}
-          {!isHudCompact && (
+          {/* Dev / Debug Diagnostic Strip (hidden by default; opt-in via Dev Toggle [H]) */}
+          {isDevDebugOpen && (
             <div
               data-testid="hud-secondary-details-strip"
               className="flex flex-wrap items-center gap-1 border-t border-white/10 pt-1 text-[10px] text-emerald-100/80"
             >
+              <span
+                data-testid="multiplayer-status-badge"
+                data-connection-status={multiplayer.status}
+                className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold leading-none ${statusBadgeColors[multiplayer.status]}`}
+              >
+                <span
+                  className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                    multiplayer.status === 'connected'
+                      ? 'bg-emerald-300'
+                      : multiplayer.status === 'disconnected'
+                        ? 'bg-rose-300'
+                        : 'animate-pulse bg-amber-300'
+                  }`}
+                />
+                <span className="leading-none">{statusLabels[multiplayer.status]}</span>
+              </span>
+
+              <span
+                data-testid="visitor-count-badge"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold leading-none text-emerald-100"
+              >
+                Visitors: {multiplayer.visitorCount}
+              </span>
+
+              <span
+                data-testid="hud-currency-badge"
+                className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-amber-300/45 bg-amber-500/20 px-2 py-0.5 text-[10px] font-extrabold leading-none text-amber-200"
+              >
+                <span>🪙</span>
+                <span>{diningWallet.currencyBalance} Coins</span>
+              </span>
+
               <span
                 data-testid="hud-beta-badge"
                 className="inline-flex items-center justify-center whitespace-nowrap rounded border border-amber-300/35 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider leading-none text-amber-200"
@@ -344,53 +342,6 @@ export const GameHudOverlay: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* Top-Right Compact Utility Bar (only 3 utility pills: Avatar, Help, Menu) */}
-        <div
-          data-testid="hud-utility-bar"
-          className="pointer-events-auto flex flex-wrap items-center gap-1.5"
-        >
-          <button
-            type="button"
-            data-testid="open-avatar-customizer-btn"
-            data-ui-interactive="true"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              openAvatarCustomizer();
-            }}
-            className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-emerald-300/35 bg-emerald-950/75 px-2.5 py-1.5 text-center text-xs font-bold leading-none text-emerald-100 shadow-md backdrop-blur-md transition hover:bg-emerald-900/85 active:scale-95"
-          >
-            <span>✨</span>
-            <span>Customize Avatar</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="hud-help-beta-btn"
-            data-ui-interactive="true"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              setHelpCenterOpen(!isHelpCenterOpen, 'controls');
-            }}
-            className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-amber-300/40 bg-emerald-950/75 px-2.5 py-1.5 text-center text-xs font-bold leading-none text-amber-200 shadow-md backdrop-blur-md transition hover:bg-emerald-900/85 active:scale-95"
-          >
-            <span>❓</span>
-            <span>Help &amp; Beta</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="open-settings-btn"
-            data-ui-interactive="true"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              setPhase(phase === 'paused' ? 'playing' : 'paused');
-            }}
-            className="inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-white/20 bg-emerald-950/75 px-2.5 py-1.5 text-center text-xs font-bold leading-none text-white shadow-md backdrop-blur-md transition hover:bg-emerald-900/85 active:scale-95"
-          >
-            ⚙️ Menu / Settings (ESC)
-          </button>
-        </div>
       </div>
 
       {/* Live Maintenance / Release Notice Banner (FR-015, US10) */}
@@ -442,12 +393,56 @@ export const GameHudOverlay: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom-Right Area: Unified Cozy Activity Dock (6 gameplay items) + Subtle Control Hint */}
+      {/* Bottom-Right Area: ONE Small Unified Dock Row for Everything Else */}
       <div className="flex flex-col items-end self-end gap-1.5">
         <div
           data-testid="hud-action-dock"
-          className="pointer-events-auto flex max-w-[calc(100vw-20rem)] flex-wrap items-center justify-end gap-1.5 rounded-2xl border border-white/20 bg-emerald-950/85 px-2.5 py-1.5 shadow-xl backdrop-blur-md"
+          className="pointer-events-auto flex max-w-[94vw] flex-wrap items-center justify-end gap-1.5 rounded-2xl border border-white/20 bg-emerald-950/85 px-2.5 py-1.5 shadow-xl backdrop-blur-md"
         >
+          <button
+            type="button"
+            data-testid="hud-chat-panel-btn"
+            data-ui-interactive="true"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              toggleChatPanel();
+            }}
+            className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border px-2.5 py-1 text-center text-[11px] font-bold leading-none transition active:scale-95 ${
+              isChatPanelOpen
+                ? 'border-emerald-300 bg-emerald-400 text-emerald-950 shadow'
+                : 'border-white/15 bg-white/10 text-emerald-50 hover:bg-white/20'
+            }`}
+          >
+            <span>💬</span>
+            <span>Chat &amp; Emotes [C]</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="toggle-social-drawer-btn"
+            data-ui-interactive="true"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setSocialDrawerOpen(!social.isSocialDrawerOpen);
+            }}
+            className={`relative inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border px-2.5 py-1 text-center text-[11px] font-bold leading-none transition active:scale-95 ${
+              social.isSocialDrawerOpen
+                ? 'border-teal-300 bg-teal-400 text-emerald-950 shadow'
+                : 'border-white/15 bg-white/10 text-emerald-50 hover:bg-white/20'
+            }`}
+          >
+            <span>🤝</span>
+            <span>Social &amp; Friends ({onlineFriendsCount})</span>
+            {pendingRequestsCount > 0 && (
+              <span
+                data-testid="pending-friend-requests-badge"
+                className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white"
+              >
+                {pendingRequestsCount}
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             data-testid="hud-passport-btn"
@@ -548,52 +543,53 @@ export const GameHudOverlay: React.FC = () => {
 
           <button
             type="button"
-            data-testid="toggle-social-drawer-btn"
+            data-testid="hud-help-beta-btn"
             data-ui-interactive="true"
             onClick={(e) => {
               e.currentTarget.blur();
-              setSocialDrawerOpen(!social.isSocialDrawerOpen);
+              setHelpCenterOpen(!isHelpCenterOpen, 'controls');
             }}
-            className={`relative inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border px-2.5 py-1 text-center text-[11px] font-bold leading-none transition active:scale-95 ${
-              social.isSocialDrawerOpen
-                ? 'border-teal-300 bg-teal-400 text-emerald-950 shadow'
-                : 'border-white/15 bg-white/10 text-emerald-50 hover:bg-white/20'
+            className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border px-2.5 py-1 text-center text-[11px] font-bold leading-none transition active:scale-95 ${
+              isHelpCenterOpen
+                ? 'border-amber-300 bg-amber-400 text-emerald-950 shadow'
+                : 'border-amber-300/40 bg-white/10 text-amber-200 hover:bg-white/20'
             }`}
           >
-            <span>🤝</span>
-            <span>Social &amp; Friends ({onlineFriendsCount})</span>
-            {pendingRequestsCount > 0 && (
-              <span
-                data-testid="pending-friend-requests-badge"
-                className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white"
-              >
-                {pendingRequestsCount}
-              </span>
-            )}
+            <span>❓</span>
+            <span>Help &amp; Beta</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="open-settings-btn"
+            data-ui-interactive="true"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setPhase(phase === 'paused' ? 'playing' : 'paused');
+            }}
+            className="inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-white/20 bg-white/10 px-2.5 py-1 text-center text-[11px] font-bold leading-none text-white transition hover:bg-white/20 active:scale-95"
+          >
+            ⚙️ Settings [ESC]
+          </button>
+
+          <button
+            type="button"
+            data-testid="hud-dev-debug-toggle-btn"
+            data-ui-interactive="true"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              toggleDevDebug();
+            }}
+            title="Toggle Dev / Debug Telemetry Strip (H)"
+            className={`inline-flex items-center justify-center whitespace-nowrap rounded-xl border px-2 py-1 text-center text-[10px] font-bold leading-none transition active:scale-95 ${
+              isDevDebugOpen
+                ? 'border-sky-300 bg-sky-400 text-sky-950 shadow'
+                : 'border-white/15 bg-white/5 text-emerald-200/80 hover:bg-white/15'
+            }`}
+          >
+            🛠️ {isDevDebugOpen ? 'Hide Debug [H]' : 'Debug [H]'}
           </button>
         </div>
-
-        {/* Subtle Desktop Control Hint Strip */}
-        {showControlHints && activeDevice === 'desktop' && !isHudCompact && (
-          <div
-            data-testid="desktop-control-hints"
-            className="rounded-full border border-white/10 bg-emerald-950/65 px-3 py-1 text-center text-[10px] text-emerald-100/85 backdrop-blur-md"
-          >
-            <span className="font-semibold text-white">WASD / Arrows</span> Walk Through Sanctuary Gate •{' '}
-            <span className="font-semibold text-white">Shift</span> Run •{' '}
-            <span className="font-semibold text-white">Space</span> Jump •{' '}
-            <span className="font-semibold text-white">E</span> Interact •{' '}
-            <span className="font-semibold text-white">Drag</span> Look •{' '}
-            <span className="font-semibold text-white">H</span> Minimal HUD •{' '}
-            <span className="text-emerald-300">
-              {isCursorRevealed
-                ? 'Cursor Revealed (Alt)'
-                : isPointerLocked
-                  ? 'Camera Locked'
-                  : 'Drag to Orbit'}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -115,7 +115,7 @@ export const ZooPassportOverlay: React.FC = () => {
         <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
           <div
             data-testid="zoo-passport-modal"
-            className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-amber-300/45 bg-emerald-950/95 text-white shadow-2xl"
+            className="flex max-h-[60vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-amber-300/45 bg-emerald-950/95 text-white shadow-2xl sm:max-h-[85vh]"
           >
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 bg-emerald-900/50 px-6 py-4">
