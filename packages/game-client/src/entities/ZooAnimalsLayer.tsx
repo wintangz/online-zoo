@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html, useGLTF } from '@react-three/drei';
 import { useStore } from 'zustand';
@@ -12,12 +12,27 @@ import {
   type AnimalInstanceState,
   type AnimalSpeciesId
 } from '@online-zoo/game-core';
-import { PALETTE_COLORS, PALETTE_MATERIALS } from '../materials/paletteMaterials';
+import { PALETTE_MATERIALS } from '../materials/paletteMaterials';
 
 const AnimalGlbRig: React.FC<{ speciesId: AnimalSpeciesId }> = ({ speciesId }) => {
   const assetId = getAnimalAssetId(speciesId);
   const gltf = useGLTF(getAssetUrl(assetId));
-  const clonedScene = useMemo(() => gltf.scene.clone(), [gltf.scene]);
+  const clonedScene = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+        if (mat && 'flatShading' in mat) {
+          mat.flatShading = true;
+          mat.needsUpdate = true;
+        }
+      }
+    });
+    return clone;
+  }, [gltf.scene]);
 
   return (
     <group name={`${speciesId}-mesh-rig`}>
@@ -34,7 +49,23 @@ const SingleAnimalEntity: React.FC<{
 }> = ({ animal, index, isInspected, isDevDebugOpen }) => {
   const rootRef = useRef<THREE.Group>(null);
   const rigRef = useRef<THREE.Group>(null);
+  const targetPosRef = useRef<THREE.Vector3>(
+    new THREE.Vector3(animal.position[0], animal.position[1], animal.position[2])
+  );
+  const initializedRef = useRef(false);
   const catalog = ANIMAL_SPECIES_CATALOG[animal.speciesId];
+
+  useLayoutEffect(() => {
+    if (rootRef.current && !initializedRef.current) {
+      rootRef.current.position.set(
+        animal.position[0],
+        animal.position[1],
+        animal.position[2]
+      );
+      rootRef.current.rotation.set(0, animal.rotationY, 0);
+      initializedRef.current = true;
+    }
+  }, [animal.position, animal.rotationY]);
 
   useFrame(({ clock }) => {
     const liveAnimals = mutableRuntimeState.animalSimulation.getAnimals();
@@ -42,10 +73,8 @@ const SingleAnimalEntity: React.FC<{
     const t = clock.getElapsedTime() + index * 1.37;
 
     if (rootRef.current) {
-      rootRef.current.position.lerp(
-        new THREE.Vector3(live.position[0], live.position[1], live.position[2]),
-        0.22
-      );
+      targetPosRef.current.set(live.position[0], live.position[1], live.position[2]);
+      rootRef.current.position.lerp(targetPosRef.current, 0.22);
       const currentY = rootRef.current.rotation.y;
       let diff = live.rotationY - currentY;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -108,8 +137,6 @@ const SingleAnimalEntity: React.FC<{
     <group
       ref={rootRef}
       name={`zoo-animal-${animal.animalId}`}
-      position={animal.position}
-      rotation={[0, animal.rotationY, 0]}
       onClick={(e) => {
         e.stopPropagation();
         gameStore.getState().inspectAnimal(animal.animalId);
@@ -143,13 +170,7 @@ const SingleAnimalEntity: React.FC<{
           >
             <span>{catalog.badgeIcon}</span>
             <span>{animal.displayName}</span>
-            <span
-              className="rounded-full px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider"
-              style={{
-                backgroundColor: PALETTE_COLORS.mossShadow,
-                color: PALETTE_COLORS.sunflowerGold
-              }}
-            >
+            <span className="rounded-full bg-emerald-900/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
               {animal.behaviorState}
             </span>
           </button>

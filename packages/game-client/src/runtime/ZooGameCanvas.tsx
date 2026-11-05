@@ -95,7 +95,7 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
   const [adaptiveDpr, setAdaptiveDpr] = useState<number>(1.25);
 
   // Preload active zone assets and any zone being transitioned into behind the loading screen
-  useEffect(() => {
+  useMemo(() => {
     preloadZoneGlbAssets(currentZoneId);
     if (transitionTargetZone) {
       preloadZoneGlbAssets(transitionTargetZone);
