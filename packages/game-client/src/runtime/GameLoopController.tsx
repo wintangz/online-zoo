@@ -1,5 +1,12 @@
 import React, { useEffect } from 'react';
+import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
+import {
+  getLoadedZones,
+  getPreloadedAssetUrls,
+  isZoneLoaded,
+  preloadZoneAssets
+} from '@online-zoo/game-assets';
 import {
   ANIMAL_DISCOVERY_RADIUS_METERS,
   CameraControllerCore,
@@ -362,6 +369,10 @@ export function stepGameRuntimeTick(
           );
           if (gateLink) {
             inputController.resetAll();
+            // Load the target zone's assets behind the loading screen when its gate is used
+            preloadZoneAssets(gateLink.targetZoneId, (url) => {
+              useGLTF.preload(url);
+            });
             if (multiplayerClient) {
               multiplayerClient.switchZoneViaGate(gateLink);
             } else {
@@ -424,6 +435,9 @@ export const GameLoopController: React.FC<GameLoopControllerProps> = (props) => 
         gameStore,
         mutableRuntimeState,
         performanceMonitor,
+        getLoadedZones,
+        getPreloadedAssetUrls,
+        isZoneLoaded,
         stepFrames: (frames = 1, dt = 1 / 60) => {
           for (let i = 0; i < frames; i++) {
             stepGameRuntimeTick(dt, props);

@@ -1,0 +1,6 @@
+# Assumptions Log: Asset Pipeline (`asset-pipeline`)
+
+1. **Content-Hashed Filename Format**: Each generated `.glb` file is emitted to `apps/web/public/assets/models/<id>.<contentHash>.glb` where `<contentHash>` is the first 8 lowercase hexadecimal characters of the file's SHA-256 digest (e.g., `/assets/models/avatar-explorer.<hash>.glb`).
+2. **Primary `zoneId` + Multi-Zone `zones` Array**: Some core props (such as `avatar-explorer`, `prop-stone-lantern`, `prop-habitat-plaque`, `prop-wooden-bench`) appear in both `'zoo-lobby'` and `'panda-forest'`. To satisfy both "every entry gains `zoneId` (or `zones`)" and per-zone loading without duplicating files, each `AssetManifestEntry` includes both `zoneId: AssetZoneId` (its primary/initial zone, `'zoo-lobby'` for shared lobby+forest assets and `'panda-forest'` for forest-exclusive assets) and `zones: AssetZoneId[]` (all zones that use the asset).
+3. **Session Zone Cache**: `packages/game-assets/src/loaders.ts` maintains an in-memory `loadedZones: Set<AssetZoneId>` and `preloadedUrls: Set<string>` (backed by `@react-three/drei`'s `useGLTF.preload` or a registered preloader callback) so once a zone is loaded during a browser session, re-entering that zone via a gate is an instant cache hit with zero redundant network requests.
+

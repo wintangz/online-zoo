@@ -3,7 +3,14 @@ import { Canvas } from '@react-three/fiber';
 import { PerformanceMonitor, useGLTF } from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
 import { useStore } from 'zustand';
-import { clearAssetCache, getPreloadUrls } from '@online-zoo/game-assets';
+import {
+   type AssetZoneId,
+  clearAssetCache,
+  getLoadedZones,
+  getPreloadedAssetUrls,
+  isZoneLoaded,
+  preloadZoneAssets
+} from '@online-zoo/game-assets';
 import {
   attachDesktopInputBindings,
   CameraControllerCore,
@@ -20,9 +27,14 @@ import {
 import { PandaForestScene } from '../environment/PandaForestScene';
 import { ZooLobbyScene } from '../environment/ZooLobbyScene';
 
-// Preload bundled GLB assets
-for (const url of getPreloadUrls()) {
-  useGLTF.preload(url);
+/**
+ * Preloads ONLY the specified zone's GLB assets via useGLTF.preload and caches
+ * the zone in memory for the current session.
+ */
+export function preloadZoneGlbAssets(zoneId: AssetZoneId): string[] {
+  return preloadZoneAssets(zoneId, (url) => {
+    useGLTF.preload(url);
+  });
 }
 
 export interface ZooGameRuntimeProps {
@@ -79,7 +91,16 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const qualityTier = useStore(gameStore, (s) => s.settings.qualityTier);
   const currentZoneId = useStore(gameStore, (s) => s.currentZoneId);
+  const transitionTargetZone = useStore(gameStore, (s) => s.transitionTargetZone);
   const [adaptiveDpr, setAdaptiveDpr] = useState<number>(1.25);
+
+  // Preload active zone assets and any zone being transitioned into behind the loading screen
+  useEffect(() => {
+    preloadZoneGlbAssets(currentZoneId);
+    if (transitionTargetZone) {
+      preloadZoneGlbAssets(transitionTargetZone);
+    }
+  }, [currentZoneId, transitionTargetZone]);
 
   const controllers = useMemo(
     () => createGameRuntimeControllers(initialSpawn, externalInputController, multiplayerOptions),
@@ -129,6 +150,9 @@ export const ZooGameCanvas: React.FC<ZooGameRuntimeProps> = ({
           ...controllers,
           gameStore,
           mutableRuntimeState,
+          getLoadedZones,
+          getPreloadedAssetUrls,
+          isZoneLoaded,
           stepFrames: (frames = 1, dt = 1 / 60) => {
             for (let i = 0; i < frames; i++) {
               mod.stepGameRuntimeTick(dt, controllers);

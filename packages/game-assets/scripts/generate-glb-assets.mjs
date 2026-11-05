@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -483,10 +484,38 @@ const ASSET_DEFINITIONS = [
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+const expectedFilenames = new Set();
+/** @type {Record<string, { url: string; sizeBytes: number; contentHash: string }>} */
+const generatedSummary = {};
+
 for (const def of ASSET_DEFINITIONS) {
   const glbBuffer = buildStylizedGlb(def);
-  const outPath = path.join(OUTPUT_DIR, def.filename);
+  const contentHash = crypto.createHash('sha256').update(glbBuffer).digest('hex').slice(0, 8);
+  const sizeBytes = glbBuffer.byteLength;
+  const hashedFilename = `${def.name}.${contentHash}.glb`;
+  expectedFilenames.add(hashedFilename);
+
+  const outPath = path.join(OUTPUT_DIR, hashedFilename);
   fs.writeFileSync(outPath, glbBuffer);
+
+  generatedSummary[def.name] = {
+    url: `/assets/models/${hashedFilename}`,
+    sizeBytes,
+    contentHash
+  };
 }
 
-console.log(`Generated ${ASSET_DEFINITIONS.length} binary .glb assets in ${OUTPUT_DIR}`);
+// Remove any unhashed or stale .glb files from OUTPUT_DIR
+for (const entry of fs.readdirSync(OUTPUT_DIR)) {
+  if (entry.endsWith('.glb') && !expectedFilenames.has(entry)) {
+    fs.unlinkSync(path.join(OUTPUT_DIR, entry));
+  }
+}
+
+if (process.argv.includes('--json')) {
+  console.log(JSON.stringify(generatedSummary, null, 2));
+} else {
+  console.log(
+    `Generated ${ASSET_DEFINITIONS.length} content-hashed binary .glb assets in ${OUTPUT_DIR}`
+  );
+}

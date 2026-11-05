@@ -181,8 +181,16 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     });
     await expect(page.getByTestId('virtual-joystick-pad')).toBeHidden();
 
-    // 5b. Verify player spawned in Zoo Lobby and transition through the North Gate into Panda Forest
+    // 5b. Verify player spawned in Zoo Lobby with ONLY zoo-lobby assets preloaded, then transition through the North Gate into Panda Forest
     await expect(page.getByTestId('hud-zone-badge')).toContainText('Zoo Lobby');
+    const loadedZonesBeforeGate = await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: { getLoadedZones: () => string[] };
+      }).__ONLINE_ZOO_RUNTIME__;
+      return rt.getLoadedZones();
+    });
+    expect(loadedZonesBeforeGate).toEqual(['zoo-lobby']);
+
     await page.evaluate(() => {
       const rt = (window as unknown as {
         __ONLINE_ZOO_RUNTIME__: {
@@ -206,6 +214,13 @@ test.describe('Feature 001: Playable Zoo World (Panda Forest)', () => {
     await expect(page.getByTestId('hud-zone-badge')).toContainText('Panda Forest', {
       timeout: 5000
     });
+    const loadedZonesAfterGate = await page.evaluate(() => {
+      const rt = (window as unknown as {
+        __ONLINE_ZOO_RUNTIME__: { getLoadedZones: () => string[] };
+      }).__ONLINE_ZOO_RUNTIME__;
+      return rt.getLoadedZones();
+    });
+    expect(loadedZonesAfterGate).toEqual(['zoo-lobby', 'panda-forest']);
 
     // 6. Contextual Environment Interaction: Habitat Info Plaque & Stone Lantern (US3, FR-015..FR-018)
     await page.evaluate(() => {

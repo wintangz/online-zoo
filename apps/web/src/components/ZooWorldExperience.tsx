@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   DEFAULT_ENTRY_ROOM_ID,
+  DEFAULT_ENTRY_ZONE_ID,
   gameStore,
   getLayoutForRoomId,
   InputController
@@ -53,6 +54,13 @@ export const ZooWorldExperience: React.FC = () => {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
   const [activePlaySession, setActivePlaySession] = useState<MainMenuPlayPayload | null>(null);
 
+  // Preload ONLY the lobby zone's assets at menu time
+  useEffect(() => {
+    void import('@online-zoo/game-client').then((mod) => {
+      mod.preloadZoneGlbAssets(DEFAULT_ENTRY_ZONE_ID);
+    });
+  }, []);
+
   const initialSpawn = useMemo<[number, number, number]>(() => {
     const roomId = activePlaySession?.roomId ?? DEFAULT_ENTRY_ROOM_ID;
     return [...getLayoutForRoomId(roomId).spawnPosition];
@@ -68,6 +76,9 @@ export const ZooWorldExperience: React.FC = () => {
   }, [activePlaySession?.roomId, wsUrl]);
 
   const handlePlayFromMenu = (payload: MainMenuPlayPayload) => {
+    void import('@online-zoo/game-client').then((mod) => {
+      mod.preloadZoneGlbAssets(payload.zoneId);
+    });
     const st = gameStore.getState();
     st.setCurrentZoneId(payload.zoneId);
     st.updateMultiplayerState({ roomId: payload.roomId });
