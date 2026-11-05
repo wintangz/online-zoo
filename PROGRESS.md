@@ -43,3 +43,28 @@
   - Logged in `specs/world-zones/ASSUMPTIONS.md`: `'zoo-lobby'` uses primary room `'zoo-lobby-1'` while `'panda-forest'` retains `'panda-forest-1'`; reconnect/resume always places the player at the Zoo Lobby entrance spawn (`[0, 0.1, 18]`) while preserving identity, wallet, and passport progress.
 - **Anything to Review**:
   - None; all unit, server integration, and Playwright E2E checks are green.
+
+
+## `main-menu`
+
+- **Slug**: `main-menu`
+- **Branch**: `fix/main-menu`
+- **Commit Hash**: `2648d61`
+- **What Changed**:
+  - Added `packages/game-core/src/multiplayer/occupancyClient.ts` (`deriveOccupancyUrlFromWsUrl`, `fetchServerOccupancy`, `resolveInitialMenuSelection`, `evaluateMainMenuPlayAttempt`, `hasReturningVisitorFlag`, `markReturningVisitor`) to query `apps/server`'s `/occupancy` endpoint derived from `NEXT_PUBLIC_WS_URL` without throwing when the server is unreachable.
+  - Built `MainMenuScreen.tsx` in `packages/ui/src/MainMenuScreen.tsx` rendered before `DynamicZooGameCanvas` mounts in `apps/web/src/components/ZooWorldExperience.tsx`:
+    - **PROFILE block**: display name input with existing validation, avatar preview chip, and avatar customizer modal integration persisted via `identityStorage`.
+    - **SERVER/ZONE block**: live zone occupancy list from `apps/server` (`/occupancy`) with Zoo Lobby selected by default, first-time visitor lock to Zoo Lobby, returning visitor zone picker, and `?room=...` shared link pre-selection.
+    - **PLAY button** (`data-testid="enter-world-btn"`): validates identity and server/room readiness, mounts the 3D canvas, and joins the selected zone/room via `NEXT_PUBLIC_WS_URL`.
+    - **Settings integration**: added `isSettingsModalOpen` / `setSettingsModalOpen` to `gameStore` so `SettingsMenuModal` is reachable both from the pre-game Main Menu and in-game (`ESC`), sharing the same settings state.
+    - **Designed failure states**: `menu-error-server-unreachable` (with Retry button), `menu-error-room-full`, and `menu-error-name-rejected` — never rendering a blank screen.
+  - Removed the legacy in-flow display name prompt from `EntryLoadingScreen.tsx` so identity comes exclusively from the Main Menu.
+- **Check Results**:
+  - `pnpm typecheck`: 7/7 packages passed (`0` errors)
+  - `pnpm lint`: 7/7 packages passed (`0` errors)
+  - `pnpm test`: 23 test files, 91 unit/integration tests passed (`@online-zoo/server`, `@online-zoo/game-core`, `@online-zoo/game-client`, `@online-zoo/game-assets`)
+  - Playwright E2E (`e2e/playable-zoo-world.spec.ts`, `e2e/multiplayer-sync.spec.ts`): 2 passed — verified pre-canvas Main Menu rendering, shared Settings modal, `menu-error-name-rejected` failure state, Play entry into `Zoo Lobby`, gate transition to `Panda Forest`, and two browser sessions joining via `?room=...` + Play and seeing each other move.
+- **Assumptions**:
+  - Logged in `specs/main-menu/ASSUMPTIONS.md`: HTTP `/occupancy` URL is derived by converting `ws://` / `wss://` in `NEXT_PUBLIC_WS_URL` to `http://` / `https://` at `/occupancy`; returning visitors are tracked via `localStorage` key `'online-zoo:returning-visitor:v1'` set upon clicking PLAY; default `Explorer #...` names keep `isCustomized: false` unless edited so sequential room visitor labels (`Explorer #101`, `Explorer #102`) continue to work when players do not customize their name.
+- **Anything to Review**:
+  - None; all unit, server integration, and Playwright E2E checks are green.
